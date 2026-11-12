@@ -6,6 +6,7 @@ const { Store, computeStats, computeRuleStreak, computePnlCalendar, normalizeHan
 const { MentorFeed } = require('../src/mentors');
 const { tradingSessions } = require('../src/sessions');
 const { audioExtension, safeStoredAudioName, themeSongFileUrl } = require('../src/media-path');
+const { shouldDismissEntrance } = require('../src/entrance-gate');
 
 let passed = 0;
 const test = async (name, fn) => { await fn(); passed++; console.log('  ✓ ' + name); };
@@ -284,6 +285,17 @@ function mockFetch(routes, calls) {
     assert.strictEqual(path.basename(escaped), 'secret.mp3');
     assert.ok(path.resolve(escaped).startsWith(root + path.sep));
     assert.ok(store.songPath(saved.themeSong.file).startsWith(root));
+  });
+  console.log('Entrance');
+  await test('click, pointer, and any key enter once; repeats and a second event do not', () => {
+    assert.strictEqual(shouldDismissEntrance({ type: 'click' }, false), true);
+    assert.strictEqual(shouldDismissEntrance({ type: 'pointerdown' }, false), true);
+    assert.strictEqual(shouldDismissEntrance({ type: 'mousedown' }, false), true);
+    assert.strictEqual(shouldDismissEntrance({ type: 'keydown', key: 'Enter', repeat: false }, false), true);
+    assert.strictEqual(shouldDismissEntrance({ type: 'keydown', key: 'a', repeat: false }, false), true);
+    assert.strictEqual(shouldDismissEntrance({ type: 'keydown', key: ' ', repeat: true }, false), false);
+    assert.strictEqual(shouldDismissEntrance({ type: 'click' }, true), false);
+    assert.strictEqual(shouldDismissEntrance({ type: 'scroll' }, false), false);
   });
   console.log(`\n${passed} tests passed`);
 })().catch(e => { console.error('FAILED:', e); process.exit(1); });

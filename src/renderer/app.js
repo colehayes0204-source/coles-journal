@@ -1,7 +1,6 @@
 'use strict';
 window.addEventListener('error', (ev) => {
   console.log('[renderer]', ev.message, ev.filename, ev.lineno);
-  try { if (typeof enterApp === 'function') enterApp(); } catch (e) {}
 });
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -463,39 +462,56 @@ function setupImages() {
 
 // ---------------- entrance ----------------
 function enterApp() {
+  if (document.body.classList.contains('entered')) return;
   document.body.classList.remove('booting'); document.body.classList.add('entered');
-  const video = $('#splashVideo'); if (video) video.pause();
-  fadeOutSong();
-  requestAnimationFrame(moveInk);
+  const video = $('#splashVideo');
+  if (video) { try { video.pause(); } catch (e) {} }
+  requestAnimationFrame(() => { try { moveInk(); } catch (e) {} });
 }
 function entrance() {
-  if (params.get('nosplash') || state.settings.splash === false) { enterApp(); return; }
-  const sp = $('#splash'); sp.hidden = false;
-  const name = state.settings.profile.handle || 'colehys';
-  $('#splashName').innerHTML = [...name].map((ch, i) => `<span style="animation-delay:${0.35 + i * 0.06}s, ${1.05 + i * 0.03}s">${esc(ch)}</span>`).join('');
-  const h = $('#splashName'), W = h.offsetWidth;
-  $$('span', h).forEach(el => { el.style.setProperty('--w', W + 'px'); el.style.setProperty('--x', el.offsetLeft - h.offsetLeft + 'px'); });
-  const video = $('#splashVideo');
-  if (video) {
-    const slow = () => { video.playbackRate = 0.5; };
-    video.muted = true;
-    video.addEventListener('loadedmetadata', slow);
-    video.addEventListener('play', slow);
-    slow();
-    video.play().catch(() => {});
-  }
-  playEntranceSong();
-  paintNow();
+  if (params.get('nosplash') || (state.settings && state.settings.splash === false)) { enterApp(); return; }
+  const sp = $('#splash');
+  if (!sp) { enterApp(); return; }
+  sp.hidden = false;
   let done = false;
-  const finish = () => {
-    if (done) return; done = true;
-    retrySong();
-    sp.classList.add('out'); enterApp();
-    setTimeout(() => sp.remove(), 800);
-    document.removeEventListener('keydown', finish, true);
+  const finish = (ev) => {
+    if (typeof shouldDismissEntrance === 'function' && !shouldDismissEntrance(ev, done)) return;
+    if (done) return;
+    done = true;
+    console.log('[entrance] enter', ev && ev.type);
+    window.removeEventListener('pointerdown', finish, true);
+    window.removeEventListener('mousedown', finish, true);
+    window.removeEventListener('click', finish, true);
+    window.removeEventListener('keydown', finish, true);
+    sp.classList.add('out');
+    enterApp();
+    setTimeout(() => { try { sp.remove(); } catch (e) {} }, 800);
+    setTimeout(() => { try { fadeOutSong(); } catch (e) { console.log('[theme-song]', e); } }, 0);
   };
-  sp.addEventListener('click', finish);
-  document.addEventListener('keydown', finish, true);
+  window.addEventListener('pointerdown', finish, true);
+  window.addEventListener('mousedown', finish, true);
+  window.addEventListener('click', finish, true);
+  window.addEventListener('keydown', finish, true);
+  try {
+    const name = (state.settings && state.settings.profile && state.settings.profile.handle) || 'colehys';
+    $('#splashName').innerHTML = [...name].map((ch, i) => `<span style="animation-delay:${0.35 + i * 0.06}s">${esc(ch)}</span>`).join('');
+    const h = $('#splashName'), W = h.offsetWidth;
+    $$('span', h).forEach(el => { el.style.setProperty('--w', W + 'px'); el.style.setProperty('--x', el.offsetLeft - h.offsetLeft + 'px'); });
+  } catch (e) { console.log('[entrance]', e); }
+  try {
+    const video = $('#splashVideo');
+    if (video) {
+      const slow = () => { try { video.playbackRate = 0.5; } catch (e) {} };
+      video.muted = true;
+      video.addEventListener('error', (e) => { e.stopPropagation(); console.log('[entrance] video', video.error && video.error.code); });
+      video.addEventListener('loadedmetadata', slow);
+      video.addEventListener('play', slow);
+      slow();
+      video.play().catch((err) => console.log('[entrance] video play', err && err.name));
+    }
+  } catch (e) { console.log('[entrance]', e); }
+  try { playEntranceSong(); } catch (e) { console.log('[theme-song]', e); }
+  try { paintNow(); } catch (e) { console.log('[clock]', e); }
 }
 
 function paintNow() {
@@ -659,15 +675,25 @@ function stopSong(immediate) {
 function fadeOutSong() {
   const h = songHandle; songHandle = null;
   if (!h) return;
-  if (h.kind === 'chime') {
-    const g = h.master.gain, from = g.value, t = h.ctx.currentTime;
-    g.cancelScheduledValues(t);
-    g.setValueAtTime(from, t);
-    g.linearRampToValueAtTime(0.0001, t + 0.7);
-    setTimeout(() => h.stop(), 800);
-    return;
-  }
-  songHandle = h; stopSong(false); songHandle = null;
+  setTimeout(() => { try { h.stop(); } catch (e) {} }, 900);
+  try {
+    if (h.kind === 'chime' && h.master && h.ctx) {
+      const g = h.master.gain, from = g.value, t = h.ctx.currentTime;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(Math.max(0.0001, from), t);
+      g.linearRampToValueAtTime(0.0001, t + 0.7);
+      return;
+    }
+    if (h.audio) {
+      const a = h.audio, from = a.volume, t0 = performance.now();
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / 700);
+        try { a.volume = from * (1 - p); } catch (e) {}
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+  } catch (e) { console.log('[theme-song]', e); }
 }
 function syncSongForm() {
   const s = state.settings.themeSong || {};

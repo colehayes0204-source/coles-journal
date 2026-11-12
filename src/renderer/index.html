@@ -225,6 +225,7 @@
         <div class="card">
           <h3>App</h3>
           <label class="check"><input type="checkbox" id="sSplash"> Show the entrance screen on launch</label>
+          <p class="muted small">The dock entrance plays when you open the app and waits until you click or press a key. Uncheck this to go straight to Home.</p>
           <div class="row gap"><button class="btn" id="openData" type="button">Open data folder</button><span class="mono small muted ellipsis" id="dataDir"></span></div>
         </div>
         <div class="card">
@@ -332,6 +333,7 @@
   <span>Update ready</span>
   <button class="btn primary sm" type="button" id="updateRestart">Restart</button>
 </div>
+<script src="../entrance-gate.js"></script>
 <script src="../media-path.js"></script>
 <script src="../sessions.js"></script>
 <script src="app.js"></script>
