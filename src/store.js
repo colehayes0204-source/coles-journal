@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { safeStoredAudioName, themeSongFileUrl } = require('./media-path');
 
 const DEFAULT_SETTINGS = {
   profile: { name: 'Cole', handle: 'colehys', account: 'Tradovate $1,000', startBalance: 1000 },
@@ -49,7 +50,7 @@ class Store {
     this.eduFile = path.join(dir, 'education.json');
     this.videosDir = path.join(dir, 'videos');
     this.thumbsDir = path.join(dir, 'thumbs');
-    this.songDir = path.join(dir, 'theme-song');
+    this.songDir = path.join(dir, 'theme');
     fs.mkdirSync(this.shotsDir, { recursive: true });
     fs.mkdirSync(this.mediaDir, { recursive: true });
     fs.mkdirSync(this.videosDir, { recursive: true });
@@ -91,15 +92,26 @@ class Store {
   importThemeSong(srcPath) {
     const prev = this.getSettings().themeSong || {};
     if (prev.file) this._rmFile(this.songDir, prev.file);
-    const file = this._importFile(srcPath, this.songDir, ['.mp3', '.m4a', '.wav', '.ogg']);
-    return this.saveSettings({ themeSong: { file, name: path.basename(srcPath), enabled: true } });
+    if (!fs.existsSync(srcPath)) throw new Error('file not found');
+    const file = safeStoredAudioName(crypto.randomUUID(), srcPath);
+    fs.copyFileSync(srcPath, path.join(this.songDir, file));
+    const display = String(srcPath).replace(/\\/g, '/').split('/').pop();
+    return this.saveSettings({ themeSong: { file, name: display, enabled: true } });
   }
   clearThemeSong() {
     const prev = this.getSettings().themeSong || {};
     if (prev.file) this._rmFile(this.songDir, prev.file);
     return this.saveSettings({ themeSong: { file: '', name: '' } });
   }
-  songPath(name) { return path.join(this.songDir, path.basename(name || '')); }
+  songPath(name) {
+    const url = themeSongFileUrl(name);
+    const base = decodeURIComponent(url.slice(url.lastIndexOf('/') + 1));
+    const root = path.resolve(this.songDir);
+    const full = path.resolve(root, base);
+    if (full !== path.join(root, base)) throw new Error('unsafe media name');
+    return full;
+  }
+  themeSongUrl(name) { return themeSongFileUrl(name); }
 
   // ---------- trade logs ----------
   listLogs() {

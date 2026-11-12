@@ -1,6 +1,9 @@
-# Cole's Journal (v1.2.1)
+# Cole's Journal (v1.2.2)
 
 A clean, minimal, light sky-themed desktop trading journal for colehys. It uses monospace for numbers, with a sky-blue accent, Gon green for wins and orange-red for losses.
+
+## What's new in 1.2.2
+- Theme songs play. An uploaded mp3 is copied into the app data folder and streamed from there, including when that folder is named Cole's Journal.
 
 ## What's new in 1.2.1
 - The entrance clock and name sit directly on the video. The white panels are gone.
@@ -38,16 +41,16 @@ Uses only the official X API v2: `GET /2/users/by/username/:handle`, then `GET /
 You need your own **Bearer Token** from the X Developer Console (console.x.com). As of late 2026, X has no free read tier. Reads are prepaid pay-per-use: about **$0.005 per post returned** and **$0.010 per user lookup**, and repeat reads of the same post within a UTC day are free. To keep costs low, the app looks up each handle once (cached), pulls 20 posts the first time, and after that asks only for posts newer than the last one it has (`since_id`). Rate limits (429) back off until `x-rate-limit-reset`. 401, 402, and 403 errors appear in plain English on the Mentors tab.
 
 ## Data location
-`settings.json`, `logs.json`, `education.json`, `mentor-cache.json`, `screenshots/`, `videos/`, `thumbs/`, `theme-song/`, and `mentor-media/` live in the OS app-data folder:
+`settings.json`, `logs.json`, `education.json`, `mentor-cache.json`, `screenshots/`, `videos/`, `thumbs/`, `theme/`, and `mentor-media/` live in the OS app-data folder:
 - Windows: `%APPDATA%\Cole's Journal`
 - macOS: `~/Library/Application Support/Cole's Journal`
 - Linux: `~/.config/Cole's Journal`
 The installer and later updates use this same folder and do not delete it. To back up, copy that folder.
 
 ## Install / run
-- **Windows**: run `ColesJournal-Setup-1.2.1.exe`. It installs for the current user (no admin) and adds a desktop shortcut and a Start menu shortcut named Cole's Journal. The app is unsigned, so SmartScreen will show "Windows protected your PC". Click **More info → Run anyway**. After that, updates download in the background; click **Restart** on the Update ready pill to install them.
-- **macOS**: unzip `ColesJournal-1.2.1-mac-arm64.zip` (Apple Silicon) or `-mac-x64.zip` (Intel) and drag **Cole's Journal.app** to Applications. The app is unsigned and not notarized, so Gatekeeper blocks the first launch. Right-click the app, choose **Open**, then **Open** again, or go to System Settings → Privacy & Security → **Open Anyway**. If macOS says the app "is damaged", run `xattr -cr "/Applications/Cole's Journal.app"`.
-- **Linux**: `chmod +x ColesJournal-1.2.1-linux-x86_64.AppImage && ./ColesJournal-1.2.1-linux-x86_64.AppImage` (needs FUSE; otherwise add `--appimage-extract-and-run`).
+- **Windows**: run `ColesJournal-Setup-1.2.2.exe`. It installs for the current user (no admin) and adds a desktop shortcut and a Start menu shortcut named Cole's Journal. The app is unsigned, so SmartScreen will show "Windows protected your PC". Click **More info → Run anyway**. After that, updates download in the background; click **Restart** on the Update ready pill to install them.
+- **macOS**: unzip `ColesJournal-1.2.2-mac-arm64.zip` (Apple Silicon) or `-mac-x64.zip` (Intel) and drag **Cole's Journal.app** to Applications. The app is unsigned and not notarized, so Gatekeeper blocks the first launch. Right-click the app, choose **Open**, then **Open** again, or go to System Settings → Privacy & Security → **Open Anyway**. If macOS says the app "is damaged", run `xattr -cr "/Applications/Cole's Journal.app"`.
+- **Linux**: `chmod +x ColesJournal-1.2.2-linux-x86_64.AppImage && ./ColesJournal-1.2.2-linux-x86_64.AppImage` (needs FUSE; otherwise add `--appimage-extract-and-run`).
 - **From source (any OS)**: install Node 18+, then `npm install && npm start`.
 
 ## Develop / build

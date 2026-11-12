@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' gon: data:; media-src 'self' gon: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' gon: data:; media-src 'self' gon: journal-media: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com">
 <title>Cole's Journal</title>
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -216,10 +216,11 @@
           <label>Volume<input id="sSongVol" type="range" min="0" max="100"></label>
           <div class="row gap wrap">
             <button class="btn" id="pickSong" type="button">Choose audio…</button>
-            <button class="btn" id="previewSong" type="button">Preview</button>
+            <button class="btn" id="previewSong" type="button">Play</button>
             <button class="btn ghost" id="clearSong" type="button">Remove</button>
           </div>
           <div class="mono small muted ellipsis" id="songName">No file chosen. A short original chime plays instead.</div>
+          <div class="form-err" id="songErr"></div>
         </div>
         <div class="card">
           <h3>App</h3>
@@ -331,6 +332,7 @@
   <span>Update ready</span>
   <button class="btn primary sm" type="button" id="updateRestart">Restart</button>
 </div>
+<script src="../media-path.js"></script>
 <script src="../sessions.js"></script>
 <script src="app.js"></script>
 </body>

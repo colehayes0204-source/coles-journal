@@ -485,6 +485,7 @@ function entrance() {
   let done = false;
   const finish = () => {
     if (done) return; done = true;
+    retrySong();
     sp.classList.add('out'); enterApp();
     setTimeout(() => sp.remove(), 800);
     document.removeEventListener('keydown', finish, true);
@@ -571,21 +572,59 @@ function playChime(vol, loop) {
   if (loop) timer = setInterval(() => schedule(ctx.currentTime + 0.05), 4200);
   return { kind: 'chime', ctx, master, timer, stop() { clearInterval(timer); ctx.close().catch(() => {}); } };
 }
+let songRetry = null;
+function reportSongError(err) {
+  const msg = err && (err.message || String(err));
+  console.log('[theme-song]', msg || err);
+  const el = $('#songErr');
+  if (el) el.textContent = "Couldn't play that audio file. Try another mp3, m4a, wav, or ogg.";
+}
+function clearSongError() { const el = $('#songErr'); if (el) el.textContent = ''; }
+function fadeAudio(audio, to, ms) {
+  const from = audio.volume, t0 = performance.now();
+  const step = (now) => {
+    if (!songHandle || songHandle.audio !== audio) return;
+    const p = Math.min(1, (now - t0) / ms);
+    audio.volume = from + (to - from) * p;
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
 function playFile(file, vol, loop) {
-  const audio = new Audio('gon://song/' + encodeURIComponent(file));
-  audio.loop = !!loop; audio.volume = vol;
-  audio.play().catch(() => {});
-  return { kind: 'file', audio, stop() { audio.pause(); } };
+  clearSongError();
+  let url;
+  try { url = themeSongFileUrl(file); }
+  catch (err) { reportSongError(err); return null; }
+  const audio = new Audio(url);
+  audio.preload = 'auto';
+  audio.loop = !!loop;
+  audio.volume = 0;
+  audio.addEventListener('error', () => reportSongError(audio.error || new Error('audio failed to load')));
+  const handle = { kind: 'file', audio, stop() { audio.pause(); audio.removeAttribute('src'); audio.load(); } };
+  const begin = () => audio.play().then(() => fadeAudio(audio, vol, 700));
+  begin().catch((err) => {
+    console.log('[theme-song]', err && err.name, err && err.message);
+    if (err && err.name === 'NotAllowedError') songRetry = () => begin().catch(reportSongError);
+    else reportSongError(err);
+  });
+  return handle;
 }
 function startSong(loop) {
   stopSong(true);
+  songRetry = null;
   const s = state.settings.themeSong || {};
   if (s.enabled === false) return null;
   const vol = songVolume();
-  songHandle = s.file ? playFile(s.file, vol, loop) : playChime(vol, loop);
+  const handle = s.file ? playFile(s.file, vol, loop) : playChime(vol, loop);
+  songHandle = handle;
   return songHandle;
 }
 function playEntranceSong() { startSong(true); }
+function retrySong() {
+  if (!songRetry) return;
+  const retry = songRetry; songRetry = null;
+  Promise.resolve(retry()).catch(reportSongError);
+}
 function stopSong(immediate) {
   const h = songHandle; songHandle = null;
   if (!h) return;
@@ -618,8 +657,14 @@ function syncSongForm() {
   const name = $('#songName');
   if (name) name.textContent = s.file ? (s.name || 'Custom theme song') : 'No file chosen. A short original chime plays instead.';
 }
-$('#pickSong').onclick = async () => { const s = await gon.song.pick(); if (!s) return; state.settings = s; syncSongForm(); toast('Theme song saved'); };
-$('#clearSong').onclick = async () => { state.settings = await gon.song.clear(); syncSongForm(); toast('Theme song removed'); };
+$('#pickSong').onclick = async () => {
+  try {
+    const s = await gon.song.pick();
+    if (!s) return;
+    state.settings = s; clearSongError(); syncSongForm(); toast('Theme song saved');
+  } catch (err) { reportSongError(err); }
+};
+$('#clearSong').onclick = async () => { state.settings = await gon.song.clear(); clearSongError(); syncSongForm(); toast('Theme song removed'); };
 $('#sSongOn').onchange = async () => { state.settings = await gon.settings.save({ themeSong: { enabled: $('#sSongOn').checked } }); };
 $('#sSongVol').oninput = async () => {
   const volume = +$('#sSongVol').value / 100;
@@ -627,7 +672,13 @@ $('#sSongVol').oninput = async () => {
   if (songHandle?.kind === 'file') songHandle.audio.volume = volume;
   if (songHandle?.kind === 'chime') songHandle.master.gain.value = Math.max(0.0001, volume * 0.4);
 };
-$('#previewSong').onclick = () => { if (songHandle) { stopSong(true); $('#previewSong').textContent = 'Preview'; return; } startSong(false); $('#previewSong').textContent = 'Stop'; setTimeout(() => { if ($('#previewSong').textContent === 'Stop') { stopSong(true); $('#previewSong').textContent = 'Preview'; } }, 6000); };
+$('#previewSong').onclick = () => {
+  if (songHandle) { stopSong(true); songRetry = null; $('#previewSong').textContent = 'Play'; return; }
+  clearSongError();
+  startSong(false);
+  $('#previewSong').textContent = 'Stop';
+  setTimeout(() => { if ($('#previewSong').textContent === 'Stop') { stopSong(true); $('#previewSong').textContent = 'Play'; } }, 8000);
+};
 
 // ---------------- P&L calendar ----------------
 function renderPnl() {

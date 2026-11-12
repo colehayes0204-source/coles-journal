@@ -1,5 +1,6 @@
 'use strict';
 const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { Store, computeStats, youtubeId } = require('./store');
@@ -30,7 +31,11 @@ function migrateLegacyData() {
   } catch (e) { console.error('legacy migration failed', e); }
 }
 
-protocol.registerSchemesAsPrivileged([{ scheme: 'gon', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'gon', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  // stream is required or <audio> cannot play; without it an uploaded mp3 stays silent.
+  { scheme: 'journal-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+]);
 
 let win, store, feed, pollTimer;
 
@@ -149,12 +154,13 @@ app.whenReady().then(() => {
   // gon://shots/<file> and gon://media/<file> serve images from the data folder only
   protocol.handle('gon', (req) => {
     const u = new URL(req.url);
-    const bases = { shots: store.shotsDir, media: store.mediaDir, videos: store.videosDir, thumbs: store.thumbsDir, song: store.songDir };
+    const bases = { shots: store.shotsDir, media: store.mediaDir, videos: store.videosDir, thumbs: store.thumbsDir };
     const base = bases[u.hostname];
     if (!base) return new Response('not found', { status: 404 });
     const file = path.join(base, path.basename(decodeURIComponent(u.pathname)));
-    return net.fetch(pathToFileURL(file).toString());
+    return net.fetch(fileUrl(file), { headers: rangeHeader(req) });
   });
+  protocol.handle('journal-media', (req) => serveThemeSong(req));
 
   ipcMain.handle('logs:list', () => store.listLogs());
   ipcMain.handle('logs:create', (_e, d) => store.createLog(d));
@@ -219,6 +225,34 @@ app.whenReady().then(() => {
   if (!process.env.GON_NO_POLL) setTimeout(runPoll, 4000); // first pull shortly after launch
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
+
+const AUDIO_MIME = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg' };
+
+function fileUrl(filePath) {
+  // pathToFileURL leaves apostrophes raw. Chromium then refuses file URLs under
+  // folders like "Cole's Journal", so the mp3 never reaches the player.
+  return pathToFileURL(filePath).href.replace(/'/g, '%27');
+}
+function rangeHeader(req) {
+  const range = req.headers && req.headers.get && req.headers.get('range');
+  return range ? { Range: range } : {};
+}
+function serveThemeSong(req) {
+  let file;
+  try { file = store.songPath(new URL(req.url).pathname); }
+  catch (e) { console.log('[theme-song]', e && e.message ? e.message : e); return new Response('not found', { status: 404 }); }
+  if (!fs.existsSync(file)) return new Response('not found', { status: 404 });
+  const type = AUDIO_MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
+  return net.fetch(fileUrl(file), { headers: rangeHeader(req) }).then((res) => {
+    const headers = new Headers(res.headers);
+    headers.set('content-type', type);
+    headers.set('accept-ranges', 'bytes');
+    return new Response(res.body, { status: res.status, headers });
+  }).catch((e) => {
+    console.log('[theme-song]', e && e.message ? e.message : e);
+    return new Response('not found', { status: 404 });
+  });
+}
 
 async function fetchYoutubeThumb(url) {
   const id = youtubeId(url);
