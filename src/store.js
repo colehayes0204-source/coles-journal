@@ -11,6 +11,8 @@ const DEFAULT_SETTINGS = {
   pollMinutes: 15,
   bearerToken: '',
   splash: true,
+  theme: 'light', // light | dark | system
+  themeSong: { enabled: true, volume: 0.7, file: '', name: '' },
   rules: [
     'No revenge trading.',
     'No trading without a setup.',
@@ -44,14 +46,25 @@ class Store {
     this.logsFile = path.join(dir, 'logs.json');
     this.settingsFile = path.join(dir, 'settings.json');
     this.cacheFile = path.join(dir, 'mentor-cache.json');
+    this.eduFile = path.join(dir, 'education.json');
+    this.videosDir = path.join(dir, 'videos');
+    this.thumbsDir = path.join(dir, 'thumbs');
+    this.songDir = path.join(dir, 'theme-song');
     fs.mkdirSync(this.shotsDir, { recursive: true });
     fs.mkdirSync(this.mediaDir, { recursive: true });
+    fs.mkdirSync(this.videosDir, { recursive: true });
+    fs.mkdirSync(this.thumbsDir, { recursive: true });
+    fs.mkdirSync(this.songDir, { recursive: true });
   }
 
   // ---------- settings ----------
   getSettings() {
     const s = readJSON(this.settingsFile, {});
-    return { ...DEFAULT_SETTINGS, ...s, profile: { ...DEFAULT_SETTINGS.profile, ...(s.profile || {}) } };
+    return {
+      ...DEFAULT_SETTINGS, ...s,
+      profile: { ...DEFAULT_SETTINGS.profile, ...(s.profile || {}) },
+      themeSong: { ...DEFAULT_SETTINGS.themeSong, ...(s.themeSong || {}) },
+    };
   }
   saveSettings(patch) {
     const cur = this.getSettings();
@@ -59,11 +72,34 @@ class Store {
     if (patch.profile) next.profile = { ...cur.profile, ...patch.profile };
     if (patch.mentors) next.mentors = normalizeHandles(patch.mentors);
     if (patch.rules) next.rules = patch.rules.map(r => String(r).trim()).filter(Boolean).slice(0, 30);
+    if (patch.themeSong) {
+      const song = { ...cur.themeSong, ...patch.themeSong };
+      song.volume = Math.max(0, Math.min(1, Number(song.volume)));
+      if (!Number.isFinite(song.volume)) song.volume = 0.7;
+      song.enabled = song.enabled !== false;
+      song.file = String(song.file || '');
+      song.name = String(song.name || '');
+      next.themeSong = song;
+    }
+    if (patch.theme) next.theme = ['light', 'dark', 'system'].includes(patch.theme) ? patch.theme : cur.theme || 'light';
     next.pollMinutes = Math.max(1, Math.min(1440, Number(next.pollMinutes) || 15));
     next.bearerToken = String(next.bearerToken || '').trim();
     writeJSON(this.settingsFile, next);
     return next;
   }
+
+  importThemeSong(srcPath) {
+    const prev = this.getSettings().themeSong || {};
+    if (prev.file) this._rmFile(this.songDir, prev.file);
+    const file = this._importFile(srcPath, this.songDir, ['.mp3', '.m4a', '.wav', '.ogg']);
+    return this.saveSettings({ themeSong: { file, name: path.basename(srcPath), enabled: true } });
+  }
+  clearThemeSong() {
+    const prev = this.getSettings().themeSong || {};
+    if (prev.file) this._rmFile(this.songDir, prev.file);
+    return this.saveSettings({ themeSong: { file: '', name: '' } });
+  }
+  songPath(name) { return path.join(this.songDir, path.basename(name || '')); }
 
   // ---------- trade logs ----------
   listLogs() {
@@ -150,6 +186,92 @@ class Store {
   // ---------- mentor cache ----------
   getMentorCache() { return readJSON(this.cacheFile, { users: {}, posts: [], status: {} }); }
   saveMentorCache(c) { writeJSON(this.cacheFile, c); }
+
+  // ---------- education videos ----------
+  listEducation() {
+    const items = readJSON(this.eduFile, []);
+    return items.sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.createdAt - a.createdAt);
+  }
+  createEducation(input) {
+    const items = readJSON(this.eduFile, []);
+    const now = Date.now();
+    const item = { id: crypto.randomUUID(), createdAt: now, updatedAt: now, ...this._cleanEdu(input) };
+    items.push(item);
+    writeJSON(this.eduFile, items);
+    return item;
+  }
+  updateEducation(id, patch) {
+    const items = readJSON(this.eduFile, []);
+    const i = items.findIndex(x => x.id === id);
+    if (i < 0) throw new Error('video not found: ' + id);
+    const prev = items[i];
+    const next = this._cleanEdu({ ...prev, ...patch });
+    if (prev.thumb && prev.thumb !== next.thumb) this._rmFile(this.thumbsDir, prev.thumb);
+    if (prev.file && prev.file !== next.file) this._rmFile(this.videosDir, prev.file);
+    items[i] = { ...prev, ...next, updatedAt: Date.now() };
+    writeJSON(this.eduFile, items);
+    return items[i];
+  }
+  deleteEducation(id) {
+    const items = readJSON(this.eduFile, []);
+    const item = items.find(x => x.id === id);
+    if (!item) return false;
+    if (item.file) this._rmFile(this.videosDir, item.file);
+    if (item.thumb) this._rmFile(this.thumbsDir, item.thumb);
+    writeJSON(this.eduFile, items.filter(x => x.id !== id));
+    return true;
+  }
+  _cleanEdu(input) {
+    const title = String(input.title || '').trim();
+    if (!title) throw new Error('title is required');
+    const url = String(input.url || '').trim();
+    const file = path.basename(String(input.file || '').trim());
+    if (!url && !file) throw new Error('a video file or URL is required');
+    if (url && !/^https:\/\//i.test(url)) throw new Error('URL must start with https://');
+    const tags = (Array.isArray(input.tags) ? input.tags : String(input.tags || '').split(/[,#]/))
+      .map(t => String(t).trim().replace(/^#/, '')).filter(Boolean).slice(0, 12);
+    const stamps = (Array.isArray(input.stamps) ? input.stamps : []).slice(0, 40).map(s => ({
+      t: String(s.t || '').trim().slice(0, 16),
+      note: String(s.note || '').trim().slice(0, 500),
+    })).filter(s => s.t || s.note);
+    let date = String(input.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = ymd(new Date());
+    return {
+      title: title.slice(0, 160),
+      mentor: String(input.mentor || '').trim().replace(/^@/, '').slice(0, 40),
+      tags, date,
+      notes: String(input.notes || '').slice(0, 8000),
+      stamps, url, file,
+      thumb: path.basename(String(input.thumb || '').trim()),
+      watched: !!input.watched,
+    };
+  }
+  importVideo(srcPath) {
+    return this._importFile(srcPath, this.videosDir, ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.mkv']);
+  }
+  saveThumbBuffer(buf, ext) {
+    const name = crypto.randomUUID() + (ext || '.jpg');
+    fs.writeFileSync(path.join(this.thumbsDir, name), buf);
+    return name;
+  }
+  saveThumbDataUrl(dataUrl) {
+    const m = String(dataUrl || '').match(/^data:image\/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=\s]+)$/);
+    if (!m) throw new Error('bad thumbnail');
+    const ext = m[1] === 'png' ? '.png' : m[1] === 'webp' ? '.webp' : '.jpg';
+    return this.saveThumbBuffer(Buffer.from(m[2], 'base64'), ext);
+  }
+  videoPath(name) { return path.join(this.videosDir, path.basename(name || '')); }
+  thumbPath(name) { return path.join(this.thumbsDir, path.basename(name || '')); }
+
+  _importFile(srcPath, dir, exts) {
+    const ext = (path.extname(srcPath) || '').toLowerCase();
+    if (!exts.includes(ext)) throw new Error('unsupported file type ' + ext);
+    if (!fs.existsSync(srcPath)) throw new Error('file not found');
+    const name = crypto.randomUUID() + ext;
+    fs.copyFileSync(srcPath, path.join(dir, name));
+    return name;
+  }
+  _rmFile(dir, name) { try { fs.unlinkSync(path.join(dir, path.basename(name))); } catch {} }
 }
 
 function normalizeHandles(list) {
@@ -215,4 +337,59 @@ function computeRuleStreak(logs) {
 function round(n, d = 2) { const p = 10 ** d; return Math.round(n * p) / p; }
 function ymd(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
-module.exports = { Store, computeStats, computeRuleStreak, normalizeHandles, DEFAULT_SETTINGS };
+// Monthly P&L calendar. `month` is 1-12. Weeks start Monday.
+// Week and month totals include only days inside the month, so the weeks add up to the month.
+function computePnlCalendar(logs, year, month) {
+  const byDate = {};
+  for (const l of logs || []) {
+    if (!l || !/^\d{4}-\d{2}-\d{2}$/.test(l.date || '')) continue;
+    const cell = byDate[l.date] = byDate[l.date] || { pnl: 0, r: 0, trades: 0 };
+    cell.trades++;
+    if (typeof l.pnl === 'number') cell.pnl = round(cell.pnl + l.pnl);
+    if (typeof l.resultR === 'number') cell.r = round(cell.r + l.resultR);
+  }
+  const first = new Date(year, month - 1, 1);
+  const start = new Date(first);
+  start.setDate(1 - ((first.getDay() + 6) % 7));
+  const weeks = [];
+  let winDays = 0, lossDays = 0, flatDays = 0, monthPnl = 0, monthR = 0;
+  for (let w = 0; w < 6; w++) {
+    const days = [];
+    let weekPnl = 0, weekR = 0, weekTrades = 0, anyInMonth = false;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + w * 7 + i);
+      const key = ymd(d);
+      const cell = byDate[key] || { pnl: 0, r: 0, trades: 0 };
+      const inMonth = d.getFullYear() === year && d.getMonth() === month - 1;
+      if (inMonth) {
+        anyInMonth = true;
+        if (cell.trades) {
+          monthPnl = round(monthPnl + cell.pnl);
+          monthR = round(monthR + cell.r);
+          weekPnl = round(weekPnl + cell.pnl);
+          weekR = round(weekR + cell.r);
+          weekTrades += cell.trades;
+          if (cell.pnl > 0) winDays++;
+          else if (cell.pnl < 0) lossDays++;
+          else flatDays++;
+        }
+      }
+      days.push({
+        date: key, inMonth, day: d.getDate(),
+        pnl: cell.trades ? cell.pnl : 0,
+        r: cell.trades ? cell.r : 0,
+        trades: cell.trades,
+      });
+    }
+    if (anyInMonth) weeks.push({ days, totalPnl: weekPnl, totalR: weekR, trades: weekTrades });
+  }
+  return { year, month, weeks, monthPnl, monthR, winDays, lossDays, flatDays };
+}
+
+function youtubeId(url) {
+  const m = String(url || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/))([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+module.exports = { Store, computeStats, computeRuleStreak, computePnlCalendar, normalizeHandles, youtubeId, DEFAULT_SETTINGS };

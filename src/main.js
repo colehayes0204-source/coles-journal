@@ -2,8 +2,11 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { Store, computeStats } = require('./store');
+const { Store, computeStats, youtubeId } = require('./store');
 const { MentorFeed } = require('./mentors');
+
+// Let the entrance theme song start without a click. Must be set before ready.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 // Optional: GON_DATA_DIR overrides the data folder (used for tests/screenshots).
 app.setName("Cole's Journal");
@@ -146,7 +149,8 @@ app.whenReady().then(() => {
   // gon://shots/<file> and gon://media/<file> serve images from the data folder only
   protocol.handle('gon', (req) => {
     const u = new URL(req.url);
-    const base = u.hostname === 'shots' ? store.shotsDir : u.hostname === 'media' ? store.mediaDir : null;
+    const bases = { shots: store.shotsDir, media: store.mediaDir, videos: store.videosDir, thumbs: store.thumbsDir, song: store.songDir };
+    const base = bases[u.hostname];
     if (!base) return new Response('not found', { status: 404 });
     const file = path.join(base, path.basename(decodeURIComponent(u.pathname)));
     return net.fetch(pathToFileURL(file).toString());
@@ -180,6 +184,34 @@ app.whenReady().then(() => {
     autoUpdater.quitAndInstall(true, true);
     return true;
   });
+  ipcMain.handle('song:pick', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Choose a theme song', properties: ['openFile'], filters: [{ name: 'Audio', extensions: ['mp3', 'm4a', 'wav', 'ogg'] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    return store.importThemeSong(r.filePaths[0]);
+  });
+  ipcMain.handle('song:clear', () => store.clearThemeSong());
+  ipcMain.handle('edu:list', () => store.listEducation());
+  ipcMain.handle('edu:pick', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Choose a video', properties: ['openFile'], filters: [{ name: 'Video', extensions: ['mp4', 'webm', 'ogg', 'mov', 'm4v', 'mkv'] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    return r.filePaths[0];
+  });
+  ipcMain.handle('edu:create', async (_e, input) => {
+    const data = { ...(input || {}) };
+    if (data.srcPath) { data.file = store.importVideo(data.srcPath); delete data.srcPath; }
+    let item = store.createEducation(data);
+    if (item.url && !item.file) {
+      const thumb = await fetchYoutubeThumb(item.url);
+      if (thumb) item = store.updateEducation(item.id, { thumb });
+    }
+    return item;
+  });
+  ipcMain.handle('edu:update', (_e, id, patch) => store.updateEducation(id, patch));
+  ipcMain.handle('edu:delete', (_e, id) => store.deleteEducation(id));
+  ipcMain.handle('edu:thumb', (_e, id, dataUrl) => {
+    const thumb = store.saveThumbDataUrl(dataUrl);
+    return store.updateEducation(id, { thumb });
+  });
 
   createWindow();
   setupAutoUpdater();
@@ -187,5 +219,17 @@ app.whenReady().then(() => {
   if (!process.env.GON_NO_POLL) setTimeout(runPoll, 4000); // first pull shortly after launch
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
+
+async function fetchYoutubeThumb(url) {
+  const id = youtubeId(url);
+  if (!id) return null;
+  try {
+    const res = await net.fetch('https://img.youtube.com/vi/' + id + '/hqdefault.jpg');
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 800) return null;
+    return store.saveThumbBuffer(buf, '.jpg');
+  } catch (e) { console.log('youtube thumb', e && e.message ? e.message : e); return null; }
+}
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

@@ -2,8 +2,9 @@
 // Headless tests: logs CRUD + stats, and the X API mentor path with mocked responses.
 const assert = require('assert');
 const fs = require('fs'), os = require('os'), path = require('path');
-const { Store, computeStats, computeRuleStreak, normalizeHandles } = require('../src/store');
+const { Store, computeStats, computeRuleStreak, computePnlCalendar, normalizeHandles, youtubeId } = require('../src/store');
 const { MentorFeed } = require('../src/mentors');
+const { tradingSessions } = require('../src/sessions');
 
 let passed = 0;
 const test = async (name, fn) => { await fn(); passed++; console.log('  ✓ ' + name); };
@@ -161,6 +162,92 @@ function mockFetch(routes, calls) {
     ms.saveSettings({ mentors: ['someoneElse'] });
     await new MentorFeed({ store: ms, fetchImpl: mockFetch([[/username/, { status: 403, body: { title: 'Forbidden' } }]], []) }).poll();
     assert.strictEqual(ms.getMentorCache().posts.length, 0);
+  });
+
+  console.log('P&L calendar');
+  await test('month and week totals count only in-month days', () => {
+    const logs = [
+      { date: '2026-11-02', pnl: 100, resultR: 2 },
+      { date: '2026-11-02', pnl: -40, resultR: -1 },
+      { date: '2026-11-03', pnl: 250, resultR: 5 },
+      { date: '2026-11-10', pnl: -70, resultR: -1 },
+      { date: '2026-10-31', pnl: 999, resultR: 9 },
+    ];
+    const cal = computePnlCalendar(logs, 2026, 11);
+    assert.strictEqual(cal.monthPnl, 240);
+    assert.strictEqual(cal.monthR, 5);
+    assert.strictEqual(cal.winDays, 2);
+    assert.strictEqual(cal.lossDays, 1);
+    assert.strictEqual(cal.flatDays, 0);
+    const week = cal.weeks.find(w => w.days.some(d => d.date === '2026-11-02'));
+    assert.strictEqual(week.totalPnl, 310);
+    assert.strictEqual(week.totalR, 6);
+    assert.strictEqual(week.days.find(d => d.date === '2026-11-02').pnl, 60);
+    assert.strictEqual(week.days.find(d => d.date === '2026-11-02').r, 1);
+    assert.strictEqual(week.days.find(d => d.date === '2026-11-02').trades, 2);
+    assert.ok(cal.weeks.every(w => w.days.length === 7));
+    assert.strictEqual(cal.weeks.reduce((s, w) => s + w.totalPnl, 0), cal.monthPnl);
+  });
+
+  console.log('Education');
+  await test('education stores a link, edits notes, and deletes the files', () => {
+    const dir = tmp(); const store = new Store(dir);
+    assert.throws(() => store.createEducation({ title: '', url: 'https://example.com/a' }), /title/);
+    assert.throws(() => store.createEducation({ title: 'Lesson', url: 'http://example.com/a' }), /https/);
+    const src = path.join(dir, 'clip.mp4'); fs.writeFileSync(src, 'video');
+    const file = store.importVideo(src);
+    const item = store.createEducation({ title: 'Sweep walkthrough', mentor: '@nq_mentor', tags: 'sweep, CISD', date: '2026-11-10', notes: 'Wait.', url: '', file, stamps: [{ t: '1:20', note: 'entry' }] });
+    assert.strictEqual(item.mentor, 'nq_mentor');
+    assert.deepStrictEqual(item.tags, ['sweep', 'CISD']);
+    assert.strictEqual(item.stamps[0].note, 'entry');
+    assert.strictEqual(store.listEducation()[0].id, item.id);
+    const thumb = store.saveThumbBuffer(Buffer.from('jpeg'), '.jpg');
+    const updated = store.updateEducation(item.id, { watched: true, thumb, notes: 'Updated' });
+    assert.strictEqual(updated.watched, true);
+    assert.strictEqual(updated.file, file);
+    assert.ok(fs.existsSync(store.videoPath(file)));
+    assert.strictEqual(store.deleteEducation(item.id), true);
+    assert.strictEqual(store.listEducation().length, 0);
+    assert.ok(!fs.existsSync(store.videoPath(file)));
+    assert.ok(!fs.existsSync(store.thumbPath(thumb)));
+    assert.strictEqual(youtubeId('https://www.youtube.com/watch?v=abcdefghijk'), 'abcdefghijk');
+    assert.strictEqual(youtubeId('https://youtu.be/abcdefghijk'), 'abcdefghijk');
+    assert.strictEqual(youtubeId('https://example.com/v'), null);
+  });
+
+  console.log('Trading sessions (ET)');
+  const expectSession = (iso, active, kind, name) => {
+    const s = tradingSessions(new Date(iso));
+    assert.deepStrictEqual(s.active, active, iso + ' active ' + s.phrase);
+    assert.strictEqual(s.next.kind, kind);
+    assert.strictEqual(s.next.name, name);
+    assert.ok(s.countdownMs > 0);
+  };
+  await test('London and New York overlap at 10:00 ET, winter and summer', () => {
+    expectSession('2026-01-05T15:00:00Z', ['london', 'ny'], 'close', 'London');
+    expectSession('2026-07-06T14:00:00Z', ['london', 'ny'], 'close', 'London');
+  });
+  await test('Asia, the gap, and the London open are ordered', () => {
+    expectSession('2026-01-06T01:00:00Z', ['asia'], 'open', 'London'); // Mon 20:00 EST
+    expectSession('2026-01-06T07:00:00Z', ['asia'], 'open', 'London'); // Tue 02:00
+    expectSession('2026-01-06T08:30:00Z', ['asia', 'london'], 'close', 'Asia'); // Tue 03:30
+    expectSession('2026-01-05T23:00:00Z', [], 'open', 'Asia'); // Mon 18:00
+    expectSession('2026-01-05T17:00:00Z', ['ny'], 'close', 'New York'); // Mon 12:00
+  });
+  await test('weekend is closed from Friday 17:00 ET until Sunday 18:00 ET', () => {
+    expectSession('2026-01-09T21:00:00Z', ['ny'], 'close', 'New York'); // Fri 16:00
+    const fri = tradingSessions(new Date('2026-01-09T23:00:00Z')); // Fri 18:00 EST
+    assert.strictEqual(fri.closed, true);
+    assert.deepStrictEqual(fri.active, []);
+    assert.strictEqual(fri.next.at, '2026-01-11T23:00:00.000Z');
+    assert.strictEqual(tradingSessions(new Date('2026-01-10T17:00:00Z')).closed, true); // Saturday
+    const sunEarly = tradingSessions(new Date('2026-01-11T22:59:00Z')); // Sun 17:59 EST
+    assert.strictEqual(sunEarly.closed, true);
+    assert.ok(sunEarly.countdownMs < 90 * 1000);
+    const sunOpen = tradingSessions(new Date('2026-01-11T23:00:00Z')); // Sun 18:00 EST
+    assert.strictEqual(sunOpen.closed, false);
+    assert.deepStrictEqual(sunOpen.active, []);
+    assert.strictEqual(sunOpen.next.name, 'Asia');
   });
   console.log(`\n${passed} tests passed`);
 })().catch(e => { console.error('FAILED:', e); process.exit(1); });

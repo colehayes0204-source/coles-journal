@@ -21,8 +21,8 @@ const INSTRUMENTS = ['MNQ', 'MES', 'NQ', 'ES', 'MGC', 'GC', 'MYM'];
 const SETUPS = ['10am H6 sweep + CISD', '10am sweep + CISD', 'H6 sweep', 'Continuation', 'Reversal'];
 const EMOTIONS = ['Calm', 'Patient', 'Confident', 'Focused', 'FOMO', 'Anxious', 'Frustrated', 'Revenge', 'Greedy', 'Bored'];
 
-const state = { tab: 'home', logs: [], stats: null, settings: null, mode: 'list', calMonth: new Date(), editing: null, form: {}, seenPosts: new Set(), homeAnimated: false };
-const TABS = ['home', 'logs', 'mentors', 'settings'];
+const state = { tab: 'home', logs: [], stats: null, settings: null, mode: 'list', calMonth: new Date(), editing: null, form: {}, seenPosts: new Set(), homeAnimated: false, pnlMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1), pnlDate: null, education: [], eduMentor: '', eduSrcPath: null, eduEditing: null };
+const TABS = ['home', 'logs', 'pnl', 'education', 'mentors', 'settings'];
 
 // ---------------- helpers ----------------
 const typers = new WeakMap();
@@ -56,15 +56,17 @@ document.addEventListener('click', e => { const g = e.target.closest('[data-goto
 window.addEventListener('resize', moveInk);
 document.addEventListener('keydown', e => {
   if (!$('#splash') || $('#splash').hidden) {
-    if (e.key === 'Escape') { if (!$('#lightbox').hidden) $('#lightbox').hidden = true; else if (!$('#wizOverlay').hidden) closeWizard(); else closeDrawer(); }
+    if (e.key === 'Escape') { if (!$('#lightbox').hidden) $('#lightbox').hidden = true; else if (!$('#eduOverlay').hidden) closeEdu(); else if (!$('#wizOverlay').hidden) closeWizard(); else closeDrawer(); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); openWizard(); }
-    if ((e.ctrlKey || e.metaKey) && /^[1-4]$/.test(e.key)) go(['home', 'logs', 'mentors', 'settings'][+e.key - 1]);
+    if ((e.ctrlKey || e.metaKey) && /^[1-6]$/.test(e.key)) go(TABS[+e.key - 1]);
     if (e.key === 'Enter' && state.tab === 'home' && $('#wizOverlay').hidden && $('#overlay').hidden && document.activeElement === document.body) openWizard();
   }
 });
 function render() {
   if (state.tab === 'home') renderHome();
   if (state.tab === 'logs') renderLogs();
+  if (state.tab === 'pnl') renderPnl();
+  if (state.tab === 'education') renderEducation();
   if (state.tab === 'mentors') renderMentors();
   if (state.tab === 'settings') renderSettings();
 }
@@ -412,6 +414,8 @@ async function renderSettings() {
   const ver = $('#appVersion');
   if (ver) ver.textContent = await gon.app.version();
   applyUpdateState(updateState);
+  syncThemeSeg();
+  syncSongForm();
 }
 $('#toggleToken').onclick = () => { const t = $('#sToken'); t.type = t.type === 'password' ? 'text' : 'password'; $('#toggleToken').textContent = t.type === 'password' ? 'Show' : 'Hide'; };
 $('#openData').onclick = () => gon.app.openDataDir();
@@ -456,18 +460,28 @@ function setupImages() {
 // ---------------- entrance ----------------
 function enterApp() {
   document.body.classList.remove('booting'); document.body.classList.add('entered');
+  const video = $('#splashVideo'); if (video) video.pause();
+  fadeOutSong();
   requestAnimationFrame(moveInk);
 }
-async function entrance() {
+function entrance() {
   if (params.get('nosplash') || state.settings.splash === false) { enterApp(); return; }
   const sp = $('#splash'); sp.hidden = false;
   const name = state.settings.profile.handle || 'colehys';
-  $('#splashName').innerHTML = [...name].map((ch, i) => `<span style="animation-delay:${0.6 + i * 0.06}s, ${1.4 + i * 0.03}s">${esc(ch)}</span>`).join('');
+  $('#splashName').innerHTML = [...name].map((ch, i) => `<span style="animation-delay:${0.35 + i * 0.06}s, ${1.05 + i * 0.03}s">${esc(ch)}</span>`).join('');
   const h = $('#splashName'), W = h.offsetWidth;
-  $$('span', h).forEach(sp => { sp.style.setProperty('--w', W + 'px'); sp.style.setProperty('--x', sp.offsetLeft - h.offsetLeft + 'px'); });
-  const gif = $('#splashGif'); gif.onerror = () => { if (!gif.dataset.fb) { gif.dataset.fb = 1; gif.src = 'assets/gon-rod.gif'; return; } $('.splash-media').remove(); $('.splash').style.background = 'linear-gradient(180deg, #bfe1ff, #f4faff)'; };
-  const total = reduced ? 700 : 4200;
-  const t0 = performance.now();
+  $$('span', h).forEach(el => { el.style.setProperty('--w', W + 'px'); el.style.setProperty('--x', el.offsetLeft - h.offsetLeft + 'px'); });
+  const video = $('#splashVideo');
+  if (video) {
+    const slow = () => { video.playbackRate = 0.5; };
+    video.muted = true;
+    video.addEventListener('loadedmetadata', slow);
+    video.addEventListener('play', slow);
+    slow();
+    video.play().catch(() => {});
+  }
+  playEntranceSong();
+  paintNow();
   let done = false;
   const finish = () => {
     if (done) return; done = true;
@@ -475,21 +489,327 @@ async function entrance() {
     setTimeout(() => sp.remove(), 800);
     document.removeEventListener('keydown', finish, true);
   };
-  const tick = () => { if (done) return; const p = Math.min(1, (performance.now() - t0) / total); if (p < 1) requestAnimationFrame(tick); else finish(); };
-  requestAnimationFrame(tick);
   sp.addEventListener('click', finish);
   document.addEventListener('keydown', finish, true);
 }
 
-setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }, 1000);
+function paintNow() {
+  const now = new Date();
+  $('#clock').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const status = tradingSessions(now);
+  const pill = $('#topSession');
+  if (pill) {
+    const names = status.sessions.filter(s => s.active).map(s => s.name);
+    pill.textContent = status.closed ? 'Market closed' : (names.join(' · ') || 'Between sessions');
+    pill.classList.toggle('closed', status.closed || !names.length);
+  }
+  const sp = $('#splash');
+  if (!sp || sp.hidden) return;
+  const parts = {};
+  for (const p of new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).formatToParts(now)) {
+    if (p.type !== 'literal') parts[p.type] = p.value;
+  }
+  $('#splashHm').textContent = parts.hour + ':' + parts.minute;
+  $('#splashSec').textContent = parts.second;
+  $('#splashAm').textContent = parts.dayPeriod || '';
+  $('#splashDate').textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const tz = new Intl.DateTimeFormat('en-US', { timeZoneName: 'long' }).formatToParts(now).find(p => p.type === 'timeZoneName');
+  $('#splashTz').textContent = tz ? tz.value : '';
+  const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const ny = $('#splashNy');
+  if (localZone !== 'America/New_York') {
+    ny.hidden = false;
+    ny.textContent = 'New York  ' + new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, timeZoneName: 'short' }).format(now);
+  } else ny.hidden = true;
+  $('#splashClosed').hidden = !status.closed;
+  $('#splashSessions').innerHTML = status.sessions.map(s => `<span class="sess ${s.active ? 'on' : ''}">${esc(s.name)}</span>`).join('');
+  $('#splashNext').textContent = status.phrase;
+}
+setInterval(paintNow, 1000);
+paintNow();
+
+// ---------------- theme ----------------
+function applyTheme(choice) {
+  const dark = choice === 'dark' || (choice === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+}
+function syncThemeSeg() {
+  const cur = state.settings?.theme || 'light';
+  $$('#themeSeg button').forEach(b => b.classList.toggle('on', b.dataset.theme === cur));
+}
+async function setTheme(choice) {
+  applyTheme(choice);
+  state.settings = await gon.settings.save({ theme: choice });
+  syncThemeSeg();
+}
+$('#themeToggle').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+$$('#themeSeg button').forEach(b => b.onclick = () => setTheme(b.dataset.theme));
+
+// ---------------- theme song ----------------
+let songHandle = null;
+function songVolume() {
+  const v = Number(state.settings?.themeSong?.volume);
+  return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.7;
+}
+function playChime(vol, loop) {
+  const ctx = new AudioContext();
+  const master = ctx.createGain();
+  master.gain.value = Math.max(0.0001, vol * 0.4);
+  master.connect(ctx.destination);
+  const notes = [523.25, 659.25, 783.99, 1046.5];
+  const schedule = (t0) => notes.forEach((freq, i) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.value = freq; o.connect(g); g.connect(master);
+    const t = t0 + i * 0.22;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.7, t + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+    o.start(t); o.stop(t + 0.9);
+  });
+  schedule(ctx.currentTime + 0.05);
+  let timer = null;
+  if (loop) timer = setInterval(() => schedule(ctx.currentTime + 0.05), 4200);
+  return { kind: 'chime', ctx, master, timer, stop() { clearInterval(timer); ctx.close().catch(() => {}); } };
+}
+function playFile(file, vol, loop) {
+  const audio = new Audio('gon://song/' + encodeURIComponent(file));
+  audio.loop = !!loop; audio.volume = vol;
+  audio.play().catch(() => {});
+  return { kind: 'file', audio, stop() { audio.pause(); } };
+}
+function startSong(loop) {
+  stopSong(true);
+  const s = state.settings.themeSong || {};
+  if (s.enabled === false) return null;
+  const vol = songVolume();
+  songHandle = s.file ? playFile(s.file, vol, loop) : playChime(vol, loop);
+  return songHandle;
+}
+function playEntranceSong() { startSong(true); }
+function stopSong(immediate) {
+  const h = songHandle; songHandle = null;
+  if (!h) return;
+  if (immediate || h.kind !== 'file') { h.stop(); return; }
+  const a = h.audio, from = a.volume, t0 = performance.now();
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / 700);
+    a.volume = from * (1 - p);
+    if (p < 1) requestAnimationFrame(step); else h.stop();
+  };
+  requestAnimationFrame(step);
+}
+function fadeOutSong() {
+  const h = songHandle; songHandle = null;
+  if (!h) return;
+  if (h.kind === 'chime') {
+    const g = h.master.gain, from = g.value, t = h.ctx.currentTime;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(from, t);
+    g.linearRampToValueAtTime(0.0001, t + 0.7);
+    setTimeout(() => h.stop(), 800);
+    return;
+  }
+  songHandle = h; stopSong(false); songHandle = null;
+}
+function syncSongForm() {
+  const s = state.settings.themeSong || {};
+  const on = $('#sSongOn'); if (on) on.checked = s.enabled !== false;
+  const vol = $('#sSongVol'); if (vol) vol.value = Math.round(songVolume() * 100);
+  const name = $('#songName');
+  if (name) name.textContent = s.file ? (s.name || 'Custom theme song') : 'No file chosen. A short original chime plays instead.';
+}
+$('#pickSong').onclick = async () => { const s = await gon.song.pick(); if (!s) return; state.settings = s; syncSongForm(); toast('Theme song saved'); };
+$('#clearSong').onclick = async () => { state.settings = await gon.song.clear(); syncSongForm(); toast('Theme song removed'); };
+$('#sSongOn').onchange = async () => { state.settings = await gon.settings.save({ themeSong: { enabled: $('#sSongOn').checked } }); };
+$('#sSongVol').oninput = async () => {
+  const volume = +$('#sSongVol').value / 100;
+  state.settings = await gon.settings.save({ themeSong: { volume } });
+  if (songHandle?.kind === 'file') songHandle.audio.volume = volume;
+  if (songHandle?.kind === 'chime') songHandle.master.gain.value = Math.max(0.0001, volume * 0.4);
+};
+$('#previewSong').onclick = () => { if (songHandle) { stopSong(true); $('#previewSong').textContent = 'Preview'; return; } startSong(false); $('#previewSong').textContent = 'Stop'; setTimeout(() => { if ($('#previewSong').textContent === 'Stop') { stopSong(true); $('#previewSong').textContent = 'Preview'; } }, 6000); };
+
+// ---------------- P&L calendar ----------------
+function renderPnl() {
+  const y = state.pnlMonth.getFullYear(), m = state.pnlMonth.getMonth();
+  const cal = pnlCalendar(state.logs, y, m + 1);
+  $('#pnlMonthLabel').textContent = state.pnlMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const max = Math.max(1, ...cal.weeks.flatMap(w => w.days.filter(d => d.inMonth).map(d => Math.abs(d.pnl))));
+  const paint = (pnl) => {
+    if (!pnl) return '';
+    const t = Math.min(1, Math.abs(pnl) / max);
+    const a = (0.16 + 0.72 * t).toFixed(3);
+    return `background:${pnl > 0 ? `rgba(47,158,68,${a})` : `rgba(217,84,43,${a})`}${t > 0.55 ? ';color:#fff' : ''}`;
+  };
+  $('#pnlKpis').innerHTML = [
+    ['Net P&L', fmt$(cal.monthPnl), cls(cal.monthPnl)],
+    ['Net R', fmtR(cal.monthR), cls(cal.monthR)],
+    ['Win days', String(cal.winDays), 'pos'],
+    ['Loss days', String(cal.lossDays), 'neg'],
+  ].map(([l, v, c]) => `<div class="card"><div class="label">${l}</div><div class="value ${c}">${v}</div></div>`).join('');
+  const head = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => `<div class="dow">${d}</div>`).join('') + '<div class="week-h">Week</div>';
+  const rows = cal.weeks.map(w => w.days.map(d => {
+    const on = state.pnlDate === d.date ? ' on' : '';
+    const body = d.trades ? `<span class="p">${fmt$(d.pnl)}</span><span class="rr">${fmtR(d.r)}</span>` : '';
+    return `<button type="button" class="pnl-cell${d.inMonth ? '' : ' other'}${d.date === ymd(new Date()) ? ' today' : ''}${on}" data-date="${d.date}" style="${d.trades ? paint(d.pnl) : ''}"><span class="d">${d.day}</span>${body}</button>`;
+  }).join('') + `<div class="pnl-cell week" style="${paint(w.totalPnl)}"><span class="d">${w.trades ? w.trades + ' trades' : '—'}</span><span class="p">${w.trades ? fmt$(w.totalPnl) : ''}</span><span class="rr">${w.trades ? fmtR(w.totalR) : ''}</span></div>`).join('');
+  $('#pnlCal').innerHTML = `<div class="pnl-grid">${head}${rows}</div>`;
+  $$('#pnlCal .pnl-cell[data-date]').forEach(b => b.onclick = () => { state.pnlDate = b.dataset.date; renderPnl(); });
+  renderPnlDay();
+}
+function renderPnlDay() {
+  const box = $('#pnlDay'), date = state.pnlDate;
+  if (!date) { box.innerHTML = '<div class="empty small">Click a day to see its trades.</div>'; return; }
+  const logs = state.logs.filter(l => l.date === date);
+  const pnl = r2(logs.reduce((s, l) => s + (typeof l.pnl === 'number' ? l.pnl : 0), 0));
+  const r = r2(logs.reduce((s, l) => s + (typeof l.resultR === 'number' ? l.resultR : 0), 0));
+  box.innerHTML = `<div class="eyebrow">${niceDate(date)}</div><h3 class="${cls(pnl)}">${logs.length ? fmt$(pnl) : 'No trades'}</h3><div class="muted small mono">${logs.length ? fmtR(r) + ' · ' + logs.length + ' trade' + (logs.length > 1 ? 's' : '') : 'Nothing logged this day.'}</div>` +
+    logs.map(l => `<button type="button" class="pnl-trade" data-id="${l.id}"><span class="mono">${esc(l.time || '—')}</span><span>${esc(l.instrument)} <span class="muted">${esc(l.setup || l.direction)}</span></span><span class="mono ${cls(l.pnl)}">${fmt$(l.pnl)}</span></button>`).join('');
+  $$('#pnlDay .pnl-trade').forEach(b => b.onclick = () => openDrawer(state.logs.find(l => l.id === b.dataset.id)));
+}
+$('#pnlPrev').onclick = () => { const d = state.pnlMonth; state.pnlMonth = new Date(d.getFullYear(), d.getMonth() - 1, 1); state.pnlDate = null; renderPnl(); };
+$('#pnlNext').onclick = () => { const d = state.pnlMonth; state.pnlMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1); state.pnlDate = null; renderPnl(); };
+function pnlCalendar(logs, year, month) {
+  const by = {};
+  for (const l of logs) {
+    const c = by[l.date] = by[l.date] || { pnl: 0, r: 0, trades: 0 };
+    c.trades++;
+    if (typeof l.pnl === 'number') c.pnl = r2(c.pnl + l.pnl);
+    if (typeof l.resultR === 'number') c.r = r2(c.r + l.resultR);
+  }
+  const first = new Date(year, month - 1, 1), start = new Date(first);
+  start.setDate(1 - ((first.getDay() + 6) % 7));
+  const weeks = []; let monthPnl = 0, monthR = 0, winDays = 0, lossDays = 0;
+  for (let w = 0; w < 6; w++) {
+    const days = []; let weekPnl = 0, weekR = 0, weekTrades = 0, any = false;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start); d.setDate(start.getDate() + w * 7 + i);
+      const key = ymd(d), cell = by[key] || { pnl: 0, r: 0, trades: 0 };
+      const inMonth = d.getFullYear() === year && d.getMonth() === month - 1;
+      if (inMonth) {
+        any = true;
+        if (cell.trades) {
+          monthPnl = r2(monthPnl + cell.pnl); monthR = r2(monthR + cell.r);
+          weekPnl = r2(weekPnl + cell.pnl); weekR = r2(weekR + cell.r); weekTrades += cell.trades;
+          if (cell.pnl > 0) winDays++; else if (cell.pnl < 0) lossDays++;
+        }
+      }
+      days.push({ date: key, inMonth, day: d.getDate(), pnl: cell.trades ? cell.pnl : 0, r: cell.trades ? cell.r : 0, trades: cell.trades });
+    }
+    if (any) weeks.push({ days, totalPnl: weekPnl, totalR: weekR, trades: weekTrades });
+  }
+  return { weeks, monthPnl, monthR, winDays, lossDays };
+}
+
+// ---------------- education ----------------
+function youtubeId(url) { const m = String(url || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/))([\w-]{11})/); return m ? m[1] : null; }
+function renderEducation() {
+  const q = ($('#eduSearch').value || '').trim().toLowerCase();
+  const mentors = [...new Set(state.education.map(v => v.mentor || 'Other'))];
+  $('#eduMentors').innerHTML = ['', ...mentors].map(m => `<button type="button" class="chip ${state.eduMentor === m ? 'on' : ''}" data-m="${esc(m)}">${m ? '@' + esc(m) : 'All'}</button>`).join('');
+  $$('#eduMentors .chip').forEach(c => c.onclick = () => { state.eduMentor = c.dataset.m; renderEducation(); });
+  let items = state.education.filter(v => !state.eduMentor || (v.mentor || 'Other') === state.eduMentor);
+  if (q) items = items.filter(v => [v.title, v.mentor, v.notes, (v.tags || []).join(' ')].join(' ').toLowerCase().includes(q));
+  if (!state.education.length) { $('#eduBoard').innerHTML = `<div class="empty card"><h3>No lessons yet</h3><p class="small">Add a video from your computer, or paste a YouTube link, and file it under a mentor.</p></div>`; return; }
+  const groups = new Map();
+  for (const v of items) { const k = v.mentor || 'Other'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(v); }
+  $('#eduBoard').innerHTML = [...groups.entries()].map(([mentor, list]) => `<section class="edu-group"><h3>@${esc(mentor)} <span class="muted small">${list.length}</span></h3><div class="edu-cards">${list.map(eduCard).join('')}</div></section>`).join('')
+    || `<div class="empty card"><h3>Nothing matches</h3></div>`;
+  $$('#eduBoard .edu-card').forEach(c => c.onclick = e => { if (e.target.closest('[data-watched]')) return; openEdu(c.dataset.id); });
+  $$('#eduBoard [data-watched]').forEach(b => b.onclick = async e => { e.stopPropagation(); const v = state.education.find(x => x.id === b.dataset.watched); const next = await gon.edu.update(v.id, { watched: !v.watched }); state.education = state.education.map(x => x.id === next.id ? next : x); renderEducation(); });
+}
+function eduCard(v) {
+  const thumb = v.thumb ? `style="background-image:url('gon://thumbs/${encodeURIComponent(v.thumb)}')"` : '';
+  return `<article class="card edu-card ${v.watched ? 'watched' : ''}" data-id="${v.id}"><div class="thumb" ${thumb}><span class="play">▶</span></div><div class="body"><div class="title">${esc(v.title)}</div><div class="muted small">${esc(v.date)}${v.watched ? ' · watched' : ''}</div><div class="chips">${(v.tags || []).map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div><button type="button" class="link" data-watched="${v.id}">${v.watched ? 'Mark unwatched' : 'Mark watched'}</button></div></article>`;
+}
+$('#eduSearch').addEventListener('input', renderEducation);
+$('#addEdu').onclick = () => openEdu(null);
+function closeEdu() { $('#eduOverlay').hidden = true; const p = $('#eduPlayer video, #eduPlayer iframe'); if (p) p.remove(); state.eduEditing = null; state.eduSrcPath = null; }
+function openEdu(id) {
+  const v = id ? state.education.find(x => x.id === id) : null;
+  state.eduEditing = id; state.eduSrcPath = null;
+  $('#eduDialogTitle').textContent = v ? 'Edit video' : 'Add a video';
+  $('#eduDelete').hidden = !v;
+  $('#eTitle').value = v?.title || '';
+  $('#eMentor').value = v?.mentor || '';
+  $('#eDate').value = v?.date || ymd(new Date());
+  $('#eTags').value = (v?.tags || []).join(', ');
+  $('#eUrl').value = v?.url || '';
+  $('#eNotes').value = v?.notes || '';
+  $('#eWatched').checked = !!v?.watched;
+  $('#eFileName').textContent = v?.file ? 'Local video attached' : 'Or paste a link above';
+  $('#eduErr').textContent = '';
+  const names = [...new Set([...(state.settings.mentors || []), ...state.education.map(x => x.mentor).filter(Boolean)])];
+  $('#mentorList').innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
+  renderStamps(v?.stamps || []);
+  renderEduPlayer(v);
+  $('#eduOverlay').hidden = false;
+}
+function renderEduPlayer(v) {
+  const box = $('#eduPlayer');
+  if (!v) { box.innerHTML = '<div class="small" style="padding:24px">A player shows up after you save a file or a YouTube link.</div>'; return; }
+  const id = youtubeId(v.url);
+  if (v.file) box.innerHTML = `<video id="eduVideo" controls src="gon://videos/${encodeURIComponent(v.file)}"></video>`;
+  else if (id) box.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${id}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+  else if (v.url) box.innerHTML = `<div style="padding:24px;text-align:center"><p class="small">This link opens in your browser.</p><button class="btn" id="eduOpen" type="button">Open video</button></div>`;
+  else box.innerHTML = '';
+  const open = $('#eduOpen'); if (open) open.onclick = () => gon.app.openExternal(v.url);
+}
+function renderStamps(stamps) {
+  $('#eStamps').innerHTML = stamps.map((s, i) => `<div class="row gap"><input class="t mono" data-i="${i}" data-k="t" value="${esc(s.t)}" placeholder="1:24"><input data-i="${i}" data-k="note" value="${esc(s.note)}" placeholder="Note"><button type="button" class="icon" data-rm="${i}">✕</button></div>`).join('');
+  $$('#eStamps [data-rm]').forEach(b => b.onclick = () => { const next = readStamps(); next.splice(+b.dataset.rm, 1); renderStamps(next); });
+}
+function readStamps() { const rows = {}; $$('#eStamps input').forEach(el => { const i = el.dataset.i; rows[i] = rows[i] || { t: '', note: '' }; rows[i][el.dataset.k] = el.value; }); return Object.values(rows); }
+$('#eAddStamp').onclick = () => {
+  const stamps = readStamps();
+  const video = $('#eduVideo');
+  let t = '';
+  if (video && Number.isFinite(video.currentTime)) { const s = Math.floor(video.currentTime); t = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+  stamps.push({ t, note: '' }); renderStamps(stamps);
+};
+$('#ePick').onclick = async () => { const p = await gon.edu.pick(); if (!p) return; state.eduSrcPath = p; $('#eFileName').textContent = p.split(/[/\\]/).pop(); };
+$('#eduClose').onclick = closeEdu; $('#eduCancel').onclick = closeEdu;
+$('#eduDelete').onclick = async () => {
+  if (!state.eduEditing || !confirm('Delete this video?')) return;
+  await gon.edu.remove(state.eduEditing); state.education = state.education.filter(v => v.id !== state.eduEditing); closeEdu(); renderEducation(); toast('Video deleted');
+};
+$('#eduSave').onclick = async () => {
+  const payload = { title: $('#eTitle').value.trim(), mentor: $('#eMentor').value.trim().replace(/^@/, ''), date: $('#eDate').value, tags: $('#eTags').value, url: $('#eUrl').value.trim(), notes: $('#eNotes').value, stamps: readStamps(), watched: $('#eWatched').checked };
+  try {
+    let saved;
+    if (state.eduEditing) saved = await gon.edu.update(state.eduEditing, payload);
+    else { if (state.eduSrcPath) payload.srcPath = state.eduSrcPath; saved = await gon.edu.create(payload); }
+    if (saved.file && !saved.thumb) { const data = await captureThumb(saved.file).catch(() => null); if (data) saved = await gon.edu.thumb(saved.id, data); }
+    state.education = state.eduEditing ? state.education.map(v => v.id === saved.id ? saved : v) : [saved, ...state.education];
+    closeEdu(); renderEducation(); toast('Video saved');
+  } catch (err) { $('#eduErr').textContent = err.message || String(err); }
+};
+function captureThumb(file) {
+  return new Promise((resolve, reject) => {
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = 'gon://videos/' + encodeURIComponent(file);
+    const fail = () => reject(new Error('thumb'));
+    v.onerror = fail;
+    v.onloadeddata = () => { try { v.currentTime = Math.min(0.4, (v.duration || 1) / 8); } catch { fail(); } };
+    v.onseeked = () => {
+      try {
+        const c = document.createElement('canvas'); c.width = 480; c.height = 270;
+        c.getContext('2d').drawImage(v, 0, 0, 480, 270);
+        resolve(c.toDataURL('image/jpeg', 0.82));
+      } catch (e) { reject(e); }
+    };
+  });
+}
 
 (async function init() {
   state.settings = await gon.settings.get();
+  applyTheme(state.settings.theme || 'light');
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (state.settings.theme === 'system') applyTheme('system'); });
   gon.updater.onStatus(applyUpdateState);
   gon.updater.state().then(applyUpdateState).catch(() => {});
   gon.app.version().then(v => { const el = $('#appVersion'); if (el) el.textContent = v; }).catch(() => {});
   setupImages();
-  [state.logs, state.stats] = await Promise.all([gon.logs.list(), gon.logs.stats()]);
+  [state.logs, state.stats, state.education] = await Promise.all([gon.logs.list(), gon.logs.stats(), gon.edu.list()]);
   const t = params.get('tab');
   const startTab = t === 'logs-calendar' ? 'logs' : (TABS.includes(t) ? t : 'home');
   if (t === 'logs-calendar') { state.mode = 'calendar'; syncMode(); }
