@@ -2,6 +2,9 @@
 import * as ResEdit from 'resedit';
 import * as PE from 'pe-library';
 import fs from 'fs';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pkgVersion = require('../package.json').version;
 const [exe, ico] = process.argv.slice(2);
 const exeObj = PE.NtExecutable.from(fs.readFileSync(exe), { ignoreCert: true });
 const res = PE.NtExecutableResource.from(exeObj);
@@ -12,7 +15,11 @@ ResEdit.Resource.IconGroupEntry.replaceIconsForResource(res.entries, id, lang, i
 const vi = ResEdit.Resource.VersionInfo.fromEntries(res.entries)[0];
 if (vi) {
   vi.setStringValues({ lang: 1033, codepage: 1200 }, { ProductName: "Cole's Journal", FileDescription: "Cole's Journal", CompanyName: 'Cole', OriginalFilename: 'ColesJournal.exe', InternalName: 'ColesJournal' });
-  vi.setFileVersion(1, 0, 3, 0); vi.setProductVersion(1, 0, 3, 0); vi.outputToResourceEntries(res.entries);
+  const parts = String(pkgVersion).split('.').map(n => parseInt(n, 10) || 0);
+  while (parts.length < 4) parts.push(0);
+  vi.setFileVersion(parts[0], parts[1], parts[2], parts[3]);
+  vi.setProductVersion(parts[0], parts[1], parts[2], parts[3]);
+  vi.outputToResourceEntries(res.entries);
 }
 res.outputResource(exeObj);
 fs.writeFileSync(exe, Buffer.from(exeObj.generate()));

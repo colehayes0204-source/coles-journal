@@ -163,6 +163,11 @@
           <label class="check"><input type="checkbox" id="sSplash"> Show the entrance screen on launch</label>
           <div class="row gap"><button class="btn" id="openData">Open data folder</button><span class="mono small muted ellipsis" id="dataDir"></span></div>
         </div>
+        <div class="card">
+          <h3>Updates</h3>
+          <p class="muted small">Current version <span class="mono" id="appVersion">…</span>. A new version downloads in the background and installs only when you restart.</p>
+          <div class="row gap"><button class="btn" type="button" id="checkUpdates">Check for updates</button><span class="small muted" id="updateMsg"></span></div>
+        </div>
         <div class="row gap save-row"><button class="btn primary" id="saveSettings">Save settings</button><span class="small muted" id="saveMsg"></span></div>
       </div>
     </section>
@@ -227,6 +232,11 @@
 
 <div class="lightbox" id="lightbox" hidden><img id="lbImg" alt=""><div class="lb-cap" id="lbCap"></div></div>
 <div class="toast" id="toast"></div>
+<div class="update-pill" id="updatePill" hidden role="status">
+  <span class="update-dot" aria-hidden="true"></span>
+  <span>Update ready</span>
+  <button class="btn primary sm" type="button" id="updateRestart">Restart</button>
+</div>
 <script src="app.js"></script>
 </body>
 </html>

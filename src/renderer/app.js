@@ -409,9 +409,37 @@ async function renderSettings() {
   $('#sToken').value = s.bearerToken; $('#sSplash').checked = s.splash !== false;
   rulesDraft = [...s.rules]; renderRulesEditor();
   $('#dataDir').textContent = await gon.app.dataDir();
+  const ver = $('#appVersion');
+  if (ver) ver.textContent = await gon.app.version();
+  applyUpdateState(updateState);
 }
 $('#toggleToken').onclick = () => { const t = $('#sToken'); t.type = t.type === 'password' ? 'text' : 'password'; $('#toggleToken').textContent = t.type === 'password' ? 'Show' : 'Hide'; };
 $('#openData').onclick = () => gon.app.openDataDir();
+
+let updateState = { status: 'idle' };
+function applyUpdateState(s) {
+  if (!s) return;
+  updateState = s;
+  const pill = $('#updatePill');
+  if (pill) pill.hidden = s.status !== 'ready';
+  const msg = $('#updateMsg');
+  if (!msg) return;
+  if (s.status === 'checking') msg.textContent = 'Checking…';
+  else if (s.status === 'downloading') msg.textContent = 'Downloading update…';
+  else if (s.status === 'ready') msg.textContent = s.version ? `Update ${s.version} ready. Restart to install.` : 'Update ready. Restart to install.';
+  else if (s.status === 'current') msg.textContent = "You're up to date.";
+  else if (s.status === 'dev') msg.textContent = 'Updates apply to the installed app.';
+  else msg.textContent = '';
+}
+$('#checkUpdates').onclick = async () => {
+  const b = $('#checkUpdates');
+  if (updateState.status === 'ready') { applyUpdateState(updateState); return; }
+  b.disabled = true;
+  applyUpdateState({ status: 'checking' });
+  try { applyUpdateState(await gon.updater.check()); }
+  finally { b.disabled = false; }
+};
+$('#updateRestart').onclick = () => { if (updateState.status === 'ready') gon.updater.install(); };
 $('#saveSettings').onclick = async () => {
   const before = state.settings;
   state.settings = await gon.settings.save({ profile: { name: $('#sName').value.trim(), handle: $('#sHandle').value.trim().replace(/^@/, ''), account: $('#sAcct').value.trim() }, rules: rulesDraft, mentors: $('#sMentors').value, pollMinutes: +$('#sPoll').value, bearerToken: $('#sToken').value, splash: $('#sSplash').checked });
@@ -457,6 +485,9 @@ setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString([], 
 
 (async function init() {
   state.settings = await gon.settings.get();
+  gon.updater.onStatus(applyUpdateState);
+  gon.updater.state().then(applyUpdateState).catch(() => {});
+  gon.app.version().then(v => { const el = $('#appVersion'); if (el) el.textContent = v; }).catch(() => {});
   setupImages();
   [state.logs, state.stats] = await Promise.all([gon.logs.list(), gon.logs.stats()]);
   const t = params.get('tab');

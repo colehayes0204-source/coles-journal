@@ -1,7 +1,7 @@
 {
   "name": "coles-journal",
   "productName": "Cole's Journal",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "Cole's Journal: a clean, sky-themed trading journal",
   "author": "Cole",
   "license": "UNLICENSED",
@@ -10,7 +10,7 @@
     "start": "electron .",
     "test": "node test/run-tests.js",
     "dist:linux": "electron-builder --linux AppImage",
-    "dist:win": "electron-builder --win portable nsis",
+    "dist:win": "electron-builder --win nsis",
     "dist:mac": "electron-builder --mac zip"
   },
   "devDependencies": {
@@ -29,12 +29,19 @@
       "output": "dist",
       "buildResources": "build"
     },
+    "afterPack": "build/after-pack.cjs",
     "files": [
       "src/**/*",
       "package.json",
       "!src/**/*.map"
     ],
     "asar": true,
+    "publish": {
+      "provider": "github",
+      "owner": "colehayes0204-source",
+      "repo": "coles-journal",
+      "releaseType": "release"
+    },
     "linux": {
       "target": [
         "AppImage"
@@ -46,12 +53,6 @@
     },
     "win": {
       "target": [
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        },
         {
           "target": "nsis",
           "arch": [
@@ -68,8 +69,15 @@
     },
     "nsis": {
       "artifactName": "ColesJournal-Setup-${version}.exe",
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Cole's Journal",
+      "uninstallDisplayName": "Cole's Journal",
+      "packElevateHelper": false,
+      "deleteAppDataOnUninstall": false,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico"
     },
@@ -88,5 +96,8 @@
       "category": "public.app-category.finance",
       "artifactName": "ColesJournal-${version}-mac-${arch}.${ext}"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }

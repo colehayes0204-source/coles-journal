@@ -1,6 +1,10 @@
-# Cole's Journal (v1.0.3)
+# Cole's Journal (v1.1.0)
 
 A clean, minimal, light sky-themed desktop trading journal for colehys. It uses monospace for numbers, with a sky-blue accent, Gon green for wins and orange-red for losses.
+
+## What's new in 1.1.0
+- **Updates**: the installed app checks GitHub Releases on launch and every 4 hours, downloads in the background, and shows an **Update ready** pill. It installs only when you click **Restart**. Settings shows the current version and **Check for updates**.
+- **Windows** is now a per-user NSIS installer (`ColesJournal-Setup-1.1.0.exe`, no admin). Portable builds cannot auto-update. Journal files stay in `%APPDATA%\Cole's Journal` across updates. See `RELEASING.md`.
 
 ## What's new in 1.0.3
 - Renamed from Gon Journal to **Cole's Journal**. On first launch, data in the old `Gon Journal` folder is copied over automatically, and the old folder is left untouched.
@@ -13,7 +17,7 @@ A clean, minimal, light sky-themed desktop trading journal for colehys. It uses 
 - **Home**: today's date, total R, win rate, net P&L, avg R, current streak, equity curve (cumulative R), recent entries, "Hunter License" profile card, Gon avatar.
 - **Training Logs** (*Nen Training*): log trades through the wizard, then edit or delete them in the side drawer. Fields: date, time, instrument, direction, entry, stop, target, result (R), P&L ($), setup, setup notes, emotions/mindset, followed-plan, and screenshots (attach or drag-drop; copied into app data). List view and month calendar (daily R; click a day to filter to it). Filters: search, instrument, side, result, date range.
 - **Mentors**: image posts from the X handles you list, newest first, each with its date and caption. Checked every 15 min (configurable). Images are cached locally.
-- **Settings**: profile, mentor handles, poll interval, X API bearer token, splash on/off, open data folder.
+- **Settings**: profile, mentor handles, poll interval, X API bearer token, splash on/off, open data folder, current version, and check for updates.
 
 Shortcuts: `Ctrl/Cmd+N` new log, `Ctrl/Cmd+1..4` switch tabs, `Esc` close.
 
@@ -26,16 +30,16 @@ You need your own **Bearer Token** from the X Developer Console (console.x.com).
 - Windows: `%APPDATA%\Cole's Journal`
 - macOS: `~/Library/Application Support/Cole's Journal`
 - Linux: `~/.config/Cole's Journal`
-(The portable .exe uses the same folder.) To back up, copy that folder.
+The installer and later updates use this same folder and do not delete it. To back up, copy that folder.
 
 ## Install / run
-- **Windows**: double-click `ColesJournal-1.0.3-win-portable.exe` (no install), or unzip `ColesJournal-1.0.3-win-x64.zip` and run `ColesJournal.exe`. The app is unsigned, so SmartScreen will show "Windows protected your PC". Click **More info → Run anyway**.
-- **macOS**: unzip `ColesJournal-1.0.3-mac-arm64.zip` (Apple Silicon) or `-mac-x64.zip` (Intel) and drag **Cole's Journal.app** to Applications. The app is unsigned and not notarized, so Gatekeeper blocks the first launch. Right-click the app, choose **Open**, then **Open** again, or go to System Settings → Privacy & Security → **Open Anyway**. If macOS says the app "is damaged", run `xattr -cr "/Applications/Cole's Journal.app"`.
-- **Linux**: `chmod +x ColesJournal-1.0.3-linux-x86_64.AppImage && ./ColesJournal-1.0.3-linux-x86_64.AppImage` (needs FUSE; otherwise add `--appimage-extract-and-run`).
+- **Windows**: run `ColesJournal-Setup-1.1.0.exe`. It installs for the current user (no admin) and adds a desktop shortcut and a Start menu shortcut named Cole's Journal. The app is unsigned, so SmartScreen will show "Windows protected your PC". Click **More info → Run anyway**. After that, updates download in the background; click **Restart** on the Update ready pill to install them.
+- **macOS**: unzip `ColesJournal-1.1.0-mac-arm64.zip` (Apple Silicon) or `-mac-x64.zip` (Intel) and drag **Cole's Journal.app** to Applications. The app is unsigned and not notarized, so Gatekeeper blocks the first launch. Right-click the app, choose **Open**, then **Open** again, or go to System Settings → Privacy & Security → **Open Anyway**. If macOS says the app "is damaged", run `xattr -cr "/Applications/Cole's Journal.app"`.
+- **Linux**: `chmod +x ColesJournal-1.1.0-linux-x64.AppImage && ./ColesJournal-1.1.0-linux-x64.AppImage` (needs FUSE; otherwise add `--appimage-extract-and-run`).
 - **From source (any OS)**: install Node 18+, then `npm install && npm start`.
 
 ## Develop / build
-`npm test` runs the unit tests (logs CRUD, stats, rules and rule streak, mocked X API). `test/e2e-ui.js` drives the real UI and the wizard (see `test/e2e-result.json`), and `test/migration.sh` checks the old-folder migration. `test/screenshots.sh` captures every tab under Xvfb. `build/build-all.sh` rebuilds icons and every artifact from Linux without wine. Put the supplied images in `build/source-images/` first (see the README there).
+`npm test` runs the unit tests (logs CRUD, stats, rules and rule streak, mocked X API). `test/e2e-ui.js` drives the real UI and the wizard (see `test/e2e-result.json`), and `test/migration.sh` checks the old-folder migration. `test/screenshots.sh` captures every tab under Xvfb. `build/build-all.sh` rebuilds icons and local artifacts from Linux without wine (the Windows file it produces is portable and does not auto-update). The release installer is built on Windows by GitHub Actions; see `RELEASING.md`. Put the supplied images in `build/source-images/` first (see the README there).
 
 ## Credits
 Cole supplied the Gon images (portrait, banner, GIF) for his personal use. This app is not affiliated with Hunter x Hunter or its rights holders. Do not redistribute it with those images. Fonts: Inter and JetBrains Mono (SIL OFL, bundled).

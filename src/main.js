@@ -31,6 +31,74 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'gon', privileges: { standard: t
 
 let win, store, feed, pollTimer;
 
+// In-app updates via GitHub Releases. Download in the background; restart only
+// when the user clicks Restart. Offline and other errors are logged, not shown.
+const UPDATE_CHECK_MS = 4 * 60 * 60 * 1000;
+let autoUpdater = null;
+let updateState = { status: 'idle', version: null };
+
+function sendUpdate() {
+  if (win && !win.isDestroyed()) win.webContents.send('updater:status', updateState);
+}
+function updaterLog(...args) { console.log('[updater]', ...args); }
+
+function setupAutoUpdater() {
+  if (process.env.GON_SHOT || process.env.GON_NO_UPDATE) return;
+  try {
+    autoUpdater = require('electron-updater').autoUpdater;
+  } catch (e) {
+    updaterLog('unavailable:', e && e.message ? e.message : e);
+    return;
+  }
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.disableWebInstaller = true;
+  autoUpdater.logger = { info: updaterLog, warn: updaterLog, error: updaterLog, debug: updaterLog };
+
+  autoUpdater.on('checking-for-update', () => {
+    if (updateState.status === 'ready' || updateState.status === 'downloading') return;
+    updateState = { status: 'checking', version: null };
+    sendUpdate();
+  });
+  autoUpdater.on('update-available', (info) => {
+    updateState = { status: 'downloading', version: info && info.version };
+    sendUpdate();
+  });
+  autoUpdater.on('update-not-available', () => {
+    if (updateState.status === 'ready') return;
+    updateState = { status: 'current', version: app.getVersion() };
+    sendUpdate();
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    updateState = { status: 'ready', version: info && info.version };
+    sendUpdate();
+  });
+  autoUpdater.on('error', (err) => {
+    updaterLog(err && err.message ? err.message : err);
+    if (updateState.status !== 'ready') {
+      updateState = { status: 'idle', version: null };
+      sendUpdate();
+    }
+  });
+
+  if (!app.isPackaged) {
+    updaterLog('not packaged; checks run only in the installed app');
+    return;
+  }
+  setTimeout(checkForUpdates, 12000);
+  setInterval(checkForUpdates, UPDATE_CHECK_MS);
+}
+
+function checkForUpdates() {
+  if (!autoUpdater || !app.isPackaged) return Promise.resolve({ status: 'dev', version: app.getVersion() });
+  if (updateState.status === 'ready' || updateState.status === 'downloading') return Promise.resolve(updateState);
+  return autoUpdater.checkForUpdates().then(() => updateState).catch((err) => {
+    updaterLog(err && err.message ? err.message : err);
+    if (updateState.status !== 'ready') updateState = { status: 'idle', version: null };
+    return updateState;
+  });
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1000, minHeight: 660,
@@ -103,8 +171,18 @@ app.whenReady().then(() => {
   ipcMain.handle('app:dataDir', () => store.dir);
   ipcMain.handle('app:openDataDir', () => shell.openPath(store.dir));
   ipcMain.handle('app:openExternal', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
+  ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('updater:state', () => updateState.status === 'idle' && !app.isPackaged ? { status: 'dev', version: app.getVersion() } : updateState);
+  ipcMain.handle('updater:check', () => checkForUpdates());
+  ipcMain.handle('updater:install', () => {
+    if (!autoUpdater || updateState.status !== 'ready') return false;
+    // Silent install, then relaunch. This is the only path that restarts the app.
+    autoUpdater.quitAndInstall(true, true);
+    return true;
+  });
 
   createWindow();
+  setupAutoUpdater();
   schedulePoll();
   if (!process.env.GON_NO_POLL) setTimeout(runPoll, 4000); // first pull shortly after launch
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

@@ -6,6 +6,12 @@ contextBridge.exposeInMainWorld('gon', {
   shots: { pick: () => inv('shots:pick'), importFiles: files => inv('shots:import', Array.from(files).map(f => webUtils.getPathForFile(f))), open: n => inv('shots:open', n) },
   settings: { get: () => inv('settings:get'), save: p => inv('settings:save', p) },
   mentors: { cache: () => inv('mentors:cache'), poll: () => inv('mentors:poll'), onUpdate: cb => ipcRenderer.on('mentors:updated', (_e, r) => cb(r)) },
-  app: { dataDir: () => inv('app:dataDir'), openDataDir: () => inv('app:openDataDir'), openExternal: u => inv('app:openExternal', u) },
+  app: { dataDir: () => inv('app:dataDir'), openDataDir: () => inv('app:openDataDir'), openExternal: u => inv('app:openExternal', u), version: () => inv('app:version') },
+  updater: {
+    state: () => inv('updater:state'),
+    check: () => inv('updater:check'),
+    install: () => inv('updater:install'),
+    onStatus: cb => ipcRenderer.on('updater:status', (_e, s) => cb(s)),
+  },
   platform: process.platform,
 });
