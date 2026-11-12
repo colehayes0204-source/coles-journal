@@ -2,6 +2,10 @@
 window.addEventListener('error', (ev) => {
   console.log('[renderer]', ev.message, ev.filename, ev.lineno);
 });
+window.addEventListener('unhandledrejection', (ev) => {
+  const reason = ev.reason;
+  console.log('[renderer] rejection', reason && (reason.stack || reason.message) || reason);
+});
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -498,8 +502,35 @@ function bindEntranceOnce() {
   window.addEventListener('click', finish, true);
   window.addEventListener('keydown', finish, true);
 }
+function showEntranceStage() {
+  const stage = document.querySelector('.splash-stage');
+  if (!stage) return;
+  stage.style.transition = 'none';
+  stage.style.opacity = '1';
+  stage.style.visibility = 'visible';
+}
+function releaseEntranceMedia() {
+  // Drop the full-resolution photo before the window fades in. Fading a 4K
+  // bitmap while the rest of the window animates a blur has been exiting the
+  // process on Windows instead of showing Home.
+  const img = $('#splashImage');
+  const video = $('#splashVideo');
+  const stage = document.querySelector('.splash-stage');
+  try {
+    if (img) { img.onload = null; img.onerror = null; img.removeAttribute('src'); img.hidden = true; }
+    if (video) {
+      video.onerror = null;
+      try { video.pause(); } catch (e) {}
+      video.removeAttribute('src');
+      try { video.load(); } catch (e) {}
+      video.hidden = true;
+    }
+    if (stage) { stage.style.transition = 'none'; stage.style.opacity = '0'; stage.style.visibility = 'hidden'; }
+  } catch (e) { console.log('[entrance]', e); }
+}
 function leaveEntrance() {
   entranceArmed = false;
+  releaseEntranceMedia();
   const sp = $('#splash');
   if (sp) sp.classList.add('out');
   enterApp();
@@ -527,7 +558,7 @@ function returnToStart() {
   entranceArmed = true;
   try { pauseAppMedia(); } catch (e) {}
   try { paintSplashName(); } catch (e) { console.log('[entrance]', e); }
-  try { showEntranceBackground({ fresh: true }); } catch (e) { console.log('[background]', e); }
+  try { showEntranceStage(); showEntranceBackground({ fresh: true }); } catch (e) { console.log('[background]', e); }
   try { playEntranceSong(); } catch (e) { console.log('[theme-song]', e); }
   try { paintNow(); } catch (e) { console.log('[clock]', e); }
   requestAnimationFrame(() => { if (sp) sp.classList.remove('out'); sharpenEntrance(); });
@@ -668,7 +699,7 @@ function entrance() {
   sp.classList.remove('out');
   entranceArmed = true;
   try { paintSplashName(); } catch (e) { console.log('[entrance]', e); }
-  try { showEntranceBackground({ fresh: true }); } catch (e) { console.log('[background]', e); }
+  try { showEntranceStage(); showEntranceBackground({ fresh: true }); } catch (e) { console.log('[background]', e); }
   try { playEntranceSong(); } catch (e) { console.log('[theme-song]', e); }
   try { paintNow(); } catch (e) { console.log('[clock]', e); }
   sharpenEntrance();

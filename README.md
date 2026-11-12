@@ -1,6 +1,9 @@
-# Cole's Journal (v1.2.6)
+# Cole's Journal (v1.2.7)
 
 A clean, minimal, light sky-themed desktop trading journal for colehys. It uses monospace for numbers, with a sky-blue accent, Gon green for wins and orange-red for losses.
+
+## What's new in 1.2.7
+- Clicking the entrance opens Home again. The full-screen photo is taken down before the window fades in, and a graphics crash no longer closes the app.
 
 ## What's new in 1.2.6
 - Custom start-screen photos stay at full resolution. A 4K image is copied as-is and is not scaled or blurred behind the clock.
@@ -66,9 +69,9 @@ You need your own **Bearer Token** from the X Developer Console (console.x.com).
 The installer and later updates use this same folder and do not delete it. To back up, copy that folder.
 
 ## Install / run
-- **Windows**: run `ColesJournal-Setup-1.2.6.exe`. It installs for the current user (no admin) and adds a desktop shortcut and a Start menu shortcut named Cole's Journal. The app is unsigned, so SmartScreen will show "Windows protected your PC". Click **More info → Run anyway**. After that, updates download in the background; click **Restart** on the Update ready pill to install them.
-- **macOS**: unzip `ColesJournal-1.2.6-mac-arm64.zip` (Apple Silicon) or `-mac-x64.zip` (Intel) and drag **Cole's Journal.app** to Applications. The app is unsigned and not notarized, so Gatekeeper blocks the first launch. Right-click the app, choose **Open**, then **Open** again, or go to System Settings → Privacy & Security → **Open Anyway**. If macOS says the app "is damaged", run `xattr -cr "/Applications/Cole's Journal.app"`.
-- **Linux**: `chmod +x ColesJournal-1.2.6-linux-x86_64.AppImage && ./ColesJournal-1.2.6-linux-x86_64.AppImage` (needs FUSE; otherwise add `--appimage-extract-and-run`).
+- **Windows**: run `ColesJournal-Setup-1.2.7.exe`. It installs for the current user (no admin) and adds a desktop shortcut and a Start menu shortcut named Cole's Journal. The app is unsigned, so SmartScreen will show "Windows protected your PC". Click **More info → Run anyway**. After that, updates download in the background; click **Restart** on the Update ready pill to install them.
+- **macOS**: unzip `ColesJournal-1.2.7-mac-arm64.zip` (Apple Silicon) or `-mac-x64.zip` (Intel) and drag **Cole's Journal.app** to Applications. The app is unsigned and not notarized, so Gatekeeper blocks the first launch. Right-click the app, choose **Open**, then **Open** again, or go to System Settings → Privacy & Security → **Open Anyway**. If macOS says the app "is damaged", run `xattr -cr "/Applications/Cole's Journal.app"`.
+- **Linux**: `chmod +x ColesJournal-1.2.7-linux-x86_64.AppImage && ./ColesJournal-1.2.7-linux-x86_64.AppImage` (needs FUSE; otherwise add `--appimage-extract-and-run`).
 - **From source (any OS)**: install Node 18+, then `npm install && npm start`.
 
 ## Develop / build

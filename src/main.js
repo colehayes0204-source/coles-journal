@@ -38,6 +38,28 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let win, store;
+let crashAt = 0;
+let userQuit = false;
+
+function mainLog(msg) {
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'main.log'), new Date().toISOString() + ' ' + msg + '\n');
+  } catch (e) { console.log('[main] log failed', e && e.message ? e.message : e); }
+}
+function noteCrash(kind, details) {
+  crashAt = Date.now();
+  const text = kind + ' ' + (typeof details === 'string' ? details : JSON.stringify(details));
+  mainLog(text);
+  console.log('[main]', text);
+}
+process.on('uncaughtException', (err) => {
+  noteCrash('uncaughtException', err && err.stack ? err.stack : String(err));
+});
+process.on('unhandledRejection', (err) => {
+  noteCrash('unhandledRejection', err && err.stack ? err.stack : String(err));
+});
 
 // In-app updates via GitHub Releases. Download in the background; restart only
 // when the user clicks Restart. Offline and other errors are logged, not shown.
@@ -151,15 +173,24 @@ function createWindow() {
       }, Number(process.env.GON_SHOT_DELAY || 1500));
     }, 300));
   }
-  const mainLog = (msg) => {
-  try {
-    const dir = path.join(app.getPath('userData'), 'logs');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'main.log'), new Date().toISOString() + ' ' + msg + '\n');
-  } catch (e) { console.log('[main] log failed', e && e.message ? e.message : e); }
-};
-win.webContents.on('render-process-gone', (_e, details) => { mainLog('render-process-gone ' + JSON.stringify(details)); console.log('[main] render-process-gone', details); });
-win.webContents.on('did-fail-load', (_e, code, desc, url) => { mainLog('did-fail-load ' + code + ' ' + desc + ' ' + url); console.log('[main] did-fail-load', code, desc, url); });
+  const reloadAfterCrash = () => {
+    if (!win || win.isDestroyed() || !win.webContents || win.webContents.isDestroyed()) return;
+    setTimeout(() => {
+      try { if (win && !win.isDestroyed()) win.webContents.reload(); }
+      catch (err) { mainLog('reload failed ' + (err && err.message ? err.message : err)); }
+    }, 80);
+  };
+  win.on('close', (e) => {
+    if (!userQuit && Date.now() - crashAt < 5000) {
+      e.preventDefault();
+      mainLog('kept the window open after a crash');
+      reloadAfterCrash();
+      return;
+    }
+    userQuit = true;
+  });
+  win.webContents.on('render-process-gone', (_e, details) => { noteCrash('render-process-gone', details); reloadAfterCrash(); });
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => { mainLog('did-fail-load ' + code + ' ' + desc + ' ' + url); console.log('[main] did-fail-load', code, desc, url); });
 win.webContents.setWindowOpenHandler(({ url }) => { if (/^https:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file:')) { e.preventDefault(); if (/^https:/.test(url)) shell.openExternal(url); } });
 }
@@ -357,4 +388,12 @@ async function fetchYoutubeThumb(url) {
   } catch (e) { console.log('youtube thumb', e && e.message ? e.message : e); return null; }
 }
 
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('child-process-gone', (_e, details) => { noteCrash('child-process-gone', details); });
+app.on('render-process-gone', (_e, _wc, details) => { noteCrash('app-render-process-gone', details); });
+app.on('before-quit', (e) => {
+  if (!userQuit && Date.now() - crashAt < 5000) {
+    e.preventDefault();
+    mainLog('blocked quit after a crash');
+  }
+});
+app.on('window-all-closed', () => { if (userQuit && process.platform !== 'darwin') app.quit(); });
