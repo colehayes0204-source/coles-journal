@@ -9,9 +9,12 @@
 <body class="booting">
 <!-- ============ ENTRANCE ============ -->
 <div id="splash" class="splash" hidden>
-  <video id="splashVideo" class="splash-video" src="assets/entrance-loop.mp4" muted autoplay loop playsinline preload="auto"></video>
-  <img id="splashImage" class="splash-image" alt="" hidden>
+  <div class="splash-stage">
+    <video id="splashVideo" class="splash-video" src="assets/entrance-loop.mp4" muted autoplay loop playsinline preload="auto"></video>
+    <img id="splashImage" class="splash-image" alt="" hidden decoding="async" fetchpriority="high">
+  </div>
   <div class="splash-shade" aria-hidden="true"></div>
+  <div class="splash-chrome">
   <div class="splash-panel">
     <div class="splash-time"><span id="splashHm">–:––</span><span id="splashSec" class="sec">––</span><span id="splashAm" class="ampm"></span></div>
     <div class="splash-date" id="splashDate"></div>
@@ -29,6 +32,7 @@
   <button type="button" id="splashShuffle" class="splash-shuffle" title="Another background" aria-label="Another background">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11.2M16 4l3 3-3 3M20 17H8.8M8 14l-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
   </button>
+  </div>
 </div>
 
 <!-- ============ APP SHELL ============ -->
@@ -40,7 +44,7 @@
       <button data-tab="logs" class="tab">Logs</button>
       <button data-tab="pnl" class="tab">P&amp;L</button>
       <button data-tab="education" class="tab">Education</button>
-      <button data-tab="mentors" class="tab">Mentors</button>
+      <button data-tab="motivation" class="tab">Motivation</button>
       <button data-tab="settings" class="tab">Settings</button>
       <span class="tab-ink" id="tabInk"></span>
     </nav>
@@ -71,13 +75,8 @@
           <h1 class="greet" id="greeting"></h1>
           <p class="muted" id="subGreeting"></p>
         </div>
-        <div class="license card" id="license">
-          <div class="eyebrow">Hunter License</div>
-          <div class="license-name" id="licName">Cole</div>
-          <div class="mono small accent" id="licHandle">@colehys</div>
-          <div class="muted small" id="licAcct"></div>
-        </div>
       </div>
+      <blockquote class="home-quote card" id="homeQuote" hidden></blockquote>
 
       <div class="home-grid">
         <button class="card ask rise" style="--i:1" id="askLog">
@@ -124,7 +123,7 @@
     <!-- LOGS -->
     <section class="view" id="view-logs">
       <div class="view-head">
-        <div><h2>Training Logs</h2><div class="muted small">Nen Training · every rep counts</div></div>
+        <div><h2>Logs</h2><div class="muted small">Every trade you write down</div></div>
         <div class="row gap">
           <div class="seg" id="logMode"><button data-mode="list" class="on">List</button><button data-mode="calendar">Calendar</button></div>
           <button class="btn primary" id="newLog">+ Log a trade</button>
@@ -166,22 +165,30 @@
         <div><h2>Education</h2><div class="muted small">Lessons grouped by the mentor who taught them</div></div>
         <button class="btn primary" id="addEdu" type="button">+ Add video</button>
       </div>
-      <div class="filters edu-filters">
-        <input id="eduSearch" placeholder="Search titles, notes, tags…">
-        <div class="chips" id="eduMentors"></div>
+      <div class="edu-layout">
+        <aside class="edu-side card" id="eduSide"></aside>
+        <div class="edu-main">
+          <input id="eduSearch" placeholder="Search titles, notes, tags…">
+          <div id="eduBoard"></div>
+        </div>
       </div>
-      <div id="eduBoard"></div>
     </section>
 
-    <!-- MENTORS -->
-    <section class="view" id="view-mentors">
+    <!-- MOTIVATION -->
+    <section class="view" id="view-motivation">
       <div class="view-head">
-        <div><h2>Mentors</h2><div class="muted small">Image posts from the traders you follow, newest first</div></div>
-        <div class="row gap"><span class="muted small mono" id="mentorStatus"></span><button class="btn" id="refreshMentors">Refresh now</button></div>
+        <div><h2>Motivation</h2><div class="muted small">Quotes and videos you want in front of you</div></div>
+        <div class="row gap wrap">
+          <div class="chips" id="motiveFilters">
+            <button type="button" class="chip on" data-f="all">All</button>
+            <button type="button" class="chip" data-f="quote">Quotes</button>
+            <button type="button" class="chip" data-f="video">Videos</button>
+          </div>
+          <button class="btn" id="addQuote" type="button">+ Quote</button>
+          <button class="btn primary" id="addMotiveVideo" type="button">+ Video</button>
+        </div>
       </div>
-      <div class="chips" id="mentorChips"></div>
-      <div id="mentorErrors"></div>
-      <div class="feed" id="feed"></div>
+      <div class="motive-grid" id="motiveBoard"></div>
     </section>
 
     <!-- SETTINGS -->
@@ -200,7 +207,7 @@
           <div class="bg-grid" id="bgGrid"></div>
         </div>
         <div class="card">
-          <h3>Hunter License</h3>
+          <h3>Profile</h3>
           <label>Name<input id="sName"></label>
           <label>Handle<input id="sHandle" placeholder="colehys"></label>
           <label>Account<input id="sAcct" placeholder="e.g. Tradovate $1,000"></label>
@@ -212,20 +219,8 @@
           <button class="btn sm" id="addRule">+ Add rule</button>
         </div>
         <div class="card">
-          <h3>Mentors</h3>
-          <p class="muted small">X handles, one per line or comma separated. Only posts with images are shown.</p>
-          <textarea id="sMentors" rows="4" placeholder="@mentor_handle&#10;@another_trader"></textarea>
-          <label>Check for new posts every<div class="row gap"><input id="sPoll" type="number" min="1" max="1440" class="w-sm"><span class="muted">minutes</span></div></label>
-        </div>
-        <div class="card">
-          <h3>X API bearer token</h3>
-          <p class="muted small">Required for the Mentors tab. Create an app in the X Developer Console and copy its <b>Bearer Token</b>. Reading posts is pay-per-use (about $0.005 per post returned and $0.01 per handle lookup at the time of writing). After the first pull, the app asks only for new posts to keep costs low.</p>
-          <div class="row gap"><input id="sToken" type="password" placeholder="AAAAAAAAAAAAAAAAAAAAA…" autocomplete="off" spellcheck="false"><button class="btn" id="toggleToken">Show</button></div>
-          <p class="muted small">Stored only in this computer's app-data folder. It is sent only to api.x.com.</p>
-        </div>
-        <div class="card">
           <h3>Appearance</h3>
-          <p class="muted small">Light sky, deep navy, or follow this computer.</p>
+          <p class="muted small">Light, dark grey, or follow this computer.</p>
           <div class="seg" id="themeSeg"><button type="button" data-theme="light">Light</button><button type="button" data-theme="dark">Dark</button><button type="button" data-theme="system">System</button></div>
         </div>
         <div class="card">
@@ -322,7 +317,7 @@
       <div class="edu-fields">
         <label>Title<input id="eTitle" placeholder="10am sweep, start to finish"></label>
         <div class="fgrid">
-          <label>Mentor<input id="eMentor" list="mentorList" placeholder="nq_mentor"></label>
+          <label>Mentor<select id="eMentor"></select></label>
           <label>Date<input id="eDate" type="date"></label>
         </div>
         <label>Tags<input id="eTags" placeholder="sweep, CISD, patience"></label>
@@ -345,6 +340,20 @@
   </div>
 </div>
 <datalist id="mentorList"></datalist>
+<div class="edu-overlay" id="motiveOverlay" hidden>
+  <div class="edu-dialog card" role="dialog" aria-modal="true">
+    <div class="wiz-top"><div class="wiz-label"><b id="motiveTitle">Add a quote</b></div><button class="icon" id="motiveClose" type="button" title="Close">✕</button></div>
+    <div class="edu-fields" style="padding:8px 22px 22px">
+      <label id="motiveTextLabel">Quote<textarea id="mText" rows="4" placeholder="The line you want to remember"></textarea></label>
+      <label id="motiveAuthorLabel">Author<input id="mAuthor" placeholder="Optional"></label>
+      <label id="motiveLinkLabel" hidden>Link<input id="mUrl" placeholder="https://www.youtube.com/watch?v=…"></label>
+      <div class="row gap wrap" id="motiveFileRow" hidden><button class="btn sm" id="mPick" type="button">Choose a video file…</button><span class="mono small muted ellipsis" id="mFileName">Or paste a link</span></div>
+      <label class="check"><input type="checkbox" id="mPin"> Pin this</label>
+      <div class="form-err" id="motiveErr"></div>
+      <div class="row gap" style="margin-top:8px"><span class="grow"></span><button class="btn" id="motiveCancel" type="button">Cancel</button><button class="btn primary" id="motiveSave" type="button">Save</button></div>
+    </div>
+  </div>
+</div>
 <div class="lightbox" id="lightbox" hidden><img id="lbImg" alt=""><div class="lb-cap" id="lbCap"></div></div>
 <div class="toast" id="toast"></div>
 <div class="update-pill" id="updatePill" hidden role="status">

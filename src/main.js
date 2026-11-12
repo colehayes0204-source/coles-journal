@@ -4,10 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { Store, computeStats, youtubeId } = require('./store');
-const { MentorFeed } = require('./mentors');
 
 // Let the entrance theme song start without a click. Must be set before ready.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+app.commandLine.appendSwitch('high-dpi-support', '1');
 
 // Optional: GON_DATA_DIR overrides the data folder (used for tests/screenshots).
 app.setName("Cole's Journal");
@@ -37,7 +37,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'journal-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ]);
 
-let win, store, feed, pollTimer;
+let win, store;
 
 // In-app updates via GitHub Releases. Download in the background; restart only
 // when the user clicks Restart. Offline and other errors are logged, not shown.
@@ -127,8 +127,9 @@ function installAppMenu() {
 }
 
 function createWindow() {
+  const sized = /^(\d+)x(\d+)$/.exec(process.env.GON_SIZE || '');
   win = new BrowserWindow({
-    width: 1440, height: 900, minWidth: 1000, minHeight: 660,
+    width: sized ? Number(sized[1]) : 1440, height: sized ? Number(sized[2]) : 900, minWidth: 1000, minHeight: 660,
     backgroundColor: '#e8f4ff', title: "Cole's Journal",
     icon: path.join(__dirname, 'renderer', 'assets', 'icon.png'),
     autoHideMenuBar: true, show: false,
@@ -163,21 +164,9 @@ win.webContents.setWindowOpenHandler(({ url }) => { if (/^https:/.test(url)) she
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file:')) { e.preventDefault(); if (/^https:/.test(url)) shell.openExternal(url); } });
 }
 
-function schedulePoll() {
-  clearInterval(pollTimer);
-  const mins = store.getSettings().pollMinutes || 15;
-  pollTimer = setInterval(runPoll, mins * 60 * 1000);
-}
-async function runPoll() {
-  const r = await feed.poll();
-  if (win && !win.isDestroyed()) win.webContents.send('mentors:updated', r);
-  return r;
-}
-
 app.whenReady().then(() => {
   migrateLegacyData();
   store = new Store(app.getPath('userData'));
-  feed = new MentorFeed({ store, fetchImpl: (u, o) => net.fetch(u, o), log: console.log });
 
   // gon://shots/<file> and gon://media/<file> serve images from the data folder only
   protocol.handle('gon', (req) => {
@@ -203,9 +192,7 @@ app.whenReady().then(() => {
   ipcMain.handle('shots:import', (_e, paths) => (paths || []).filter(Boolean).map(p => store.importScreenshot(p)));
   ipcMain.handle('shots:open', (_e, name) => shell.openPath(store.shotPath(name)));
   ipcMain.handle('settings:get', () => store.getSettings());
-  ipcMain.handle('settings:save', (_e, patch) => { const s = store.saveSettings(patch); schedulePoll(); return s; });
-  ipcMain.handle('mentors:cache', () => store.getMentorCache());
-  ipcMain.handle('mentors:poll', () => runPoll());
+  ipcMain.handle('settings:save', (_e, patch) => store.saveSettings(patch));
   ipcMain.handle('app:dataDir', () => store.dir);
   ipcMain.handle('app:openDataDir', () => shell.openPath(store.dir));
   ipcMain.handle('app:openExternal', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
@@ -258,19 +245,61 @@ app.whenReady().then(() => {
     const thumb = store.saveThumbDataUrl(dataUrl);
     return store.updateEducation(id, { thumb });
   });
+  ipcMain.handle('edu:mentorAdd', (_e, name, color) => store.addEduMentor(name, color));
+  ipcMain.handle('edu:mentorRename', (_e, id, name) => store.renameEduMentor(id, name));
+  ipcMain.handle('edu:mentorColor', (_e, id, color) => store.recolorEduMentor(id, color));
+  ipcMain.handle('edu:mentorRemove', (_e, id) => store.deleteEduMentor(id));
+  ipcMain.handle('motivation:list', () => store.listMotivation());
+  ipcMain.handle('motivation:create', (_e, input) => {
+    const data = { ...(input || {}) };
+    if (data.srcPath) { data.file = store.importMotiveVideo(data.srcPath); delete data.srcPath; data.kind = 'video'; }
+    return store.createMotivation(data);
+  });
+  ipcMain.handle('motivation:update', (_e, id, patch) => store.updateMotivation(id, patch || {}));
+  ipcMain.handle('motivation:remove', (_e, id) => store.deleteMotivation(id));
+  ipcMain.handle('motivation:reorder', (_e, ids) => store.reorderMotivation(ids || []));
+  ipcMain.handle('motivation:pick', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Choose a video', properties: ['openFile'], filters: [{ name: 'Video', extensions: ['mp4', 'webm', 'mov', 'mkv', 'm4v'] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    return r.filePaths[0];
+  });
+  ipcMain.handle('recap:list', () => store.listRecaps());
+  ipcMain.handle('recap:pick', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Add video recaps', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Video', extensions: ['mp4', 'webm', 'mov', 'mkv', 'm4v'] }] });
+    if (r.canceled) return [];
+    return r.filePaths;
+  });
+  ipcMain.handle('recap:add', async (e, input) => {
+    const data = input || {};
+    const paths = data.srcPaths && data.srcPaths.length ? data.srcPaths : (data.srcPath ? [data.srcPath] : []);
+    const added = [];
+    if (!paths.length) {
+      added.push(await store.addRecap(data));
+      return store.listRecaps();
+    }
+    for (let i = 0; i < paths.length; i++) {
+      const src = paths[i];
+      const name = require('path').basename(src);
+      added.push(await store.addRecap({ ...data, srcPath: src, title: data.title || name }, (ratio) => {
+        if (!e.sender.isDestroyed()) e.sender.send('recap:progress', { name, index: i, total: paths.length, ratio });
+      }));
+    }
+    return store.listRecaps();
+  });
+  ipcMain.handle('recap:update', (_e, id, patch) => store.updateRecap(id, patch || {}));
+  ipcMain.handle('recap:remove', (_e, id) => store.deleteRecap(id));
+  ipcMain.handle('recap:reorder', (_e, date, ids) => store.reorderRecaps(date, ids || []));
 
   installAppMenu();
   createWindow();
   setupAutoUpdater();
-  schedulePoll();
-  if (!process.env.GON_NO_POLL) setTimeout(runPoll, 4000); // first pull shortly after launch
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
 const MEDIA_MIME = {
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
-  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.mkv': 'video/x-matroska', '.m4v': 'video/mp4',
 };
 
 function fileUrl(filePath) {
@@ -292,10 +321,16 @@ function serveJournalMedia(req) {
   } catch (e) {
     return new Response('not found', { status: 404 });
   }
-  const background = host === 'bg';
-  const label = background ? '[background]' : '[theme-song]';
+  const label = host === 'bg' ? '[background]' : host === 'recap' ? '[recap]' : host === 'motive' ? '[motivation]' : '[theme-song]';
   let file;
-  try { file = background ? store.backgroundPath(name) : store.songPath(name); }
+  try {
+    if (host === 'bg') file = store.backgroundPath(name);
+    else if (host === 'motive') file = store.motivePath(name);
+    else if (host === 'recap') {
+      const parts = String(name || '').split('/').filter(Boolean);
+      file = store.recapPath(decodeURIComponent(parts[0] || ''), parts[1] || '');
+    } else file = store.songPath(name);
+  }
   catch (e) { console.log(label, e && e.message ? e.message : e); return new Response('not found', { status: 404 }); }
   if (!fs.existsSync(file)) return new Response('not found', { status: 404 });
   const type = MEDIA_MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';

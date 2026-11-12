@@ -6,6 +6,7 @@
 const AUDIO_EXTS = ['.mp3', '.m4a', '.wav', '.ogg'];
 const BG_IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
 const BG_VIDEO_EXTS = ['.mp4', '.webm', '.mov'];
+const VIDEO_EXTS = ['.mp4', '.webm', '.mov', '.mkv', '.m4v'];
 
 function audioExtension(srcPath) {
   const norm = String(srcPath || '').replace(/\\/g, '/');
@@ -62,10 +63,36 @@ function backgroundFileUrl(fileName) {
   return 'journal-media://bg/' + encodeURIComponent(safe);
 }
 
+function safeStoredVideoName(id, srcPath) {
+  const ext = audioExtension(srcPath);
+  if (!VIDEO_EXTS.includes(ext)) throw new Error('unsupported file type ' + (ext || '(none)'));
+  const cleanId = String(id || '').replace(/[^A-Za-z0-9-]/g, '');
+  if (!cleanId) throw new Error('bad id');
+  return cleanId + ext;
+}
+
+function storedVideoUrl(bucket, fileName) {
+  const decoded = safeMediaBase(fileName);
+  const ext = audioExtension(decoded);
+  if (!VIDEO_EXTS.includes(ext)) throw new Error('unsupported file type ' + ext);
+  const safe = decoded.slice(0, -ext.length) + ext;
+  return 'journal-media://' + bucket + '/' + encodeURIComponent(safe);
+}
+
+function recapFileUrl(date, fileName) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) throw new Error('bad date');
+  const decoded = safeMediaBase(fileName);
+  const ext = audioExtension(decoded);
+  if (!VIDEO_EXTS.includes(ext)) throw new Error('unsupported file type ' + ext);
+  const safe = decoded.slice(0, -ext.length) + ext;
+  return 'journal-media://recap/' + date + '/' + encodeURIComponent(safe);
+}
+
 const mediaPathApi = {
-  AUDIO_EXTS, BG_IMAGE_EXTS, BG_VIDEO_EXTS,
+  AUDIO_EXTS, BG_IMAGE_EXTS, BG_VIDEO_EXTS, VIDEO_EXTS,
   audioExtension, safeStoredAudioName, themeSongFileUrl,
   backgroundKind, safeStoredBackgroundName, backgroundFileUrl,
+  safeStoredVideoName, storedVideoUrl, recapFileUrl,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = mediaPathApi;
 if (typeof window !== 'undefined') Object.assign(window, mediaPathApi);

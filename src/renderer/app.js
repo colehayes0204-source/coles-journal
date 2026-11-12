@@ -24,8 +24,8 @@ const INSTRUMENTS = ['MNQ', 'MES', 'NQ', 'ES', 'MGC', 'GC', 'MYM'];
 const SETUPS = ['10am H6 sweep + CISD', '10am sweep + CISD', 'H6 sweep', 'Continuation', 'Reversal'];
 const EMOTIONS = ['Calm', 'Patient', 'Confident', 'Focused', 'FOMO', 'Anxious', 'Frustrated', 'Revenge', 'Greedy', 'Bored'];
 
-const state = { tab: 'home', logs: [], stats: null, settings: null, mode: 'list', calMonth: new Date(), editing: null, form: {}, seenPosts: new Set(), homeAnimated: false, pnlMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1), pnlDate: null, education: [], eduMentor: '', eduSrcPath: null, eduEditing: null };
-const TABS = ['home', 'logs', 'pnl', 'education', 'mentors', 'settings'];
+const state = { tab: 'home', logs: [], stats: null, settings: null, mode: 'list', calMonth: new Date(), editing: null, form: {}, homeAnimated: false, homeQuoteId: '', pnlMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1), pnlDate: null, education: [], eduMentor: '', eduSrcPath: null, eduEditing: null, motivation: [], motiveFilter: 'all', motiveKind: 'quote', motiveSrc: null, recaps: [], recapProgress: null };
+const TABS = ['home', 'logs', 'pnl', 'education', 'motivation', 'settings'];
 
 // ---------------- helpers ----------------
 const typers = new WeakMap();
@@ -63,6 +63,7 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'w') { e.preventDefault(); returnToStart(); return; }
   if (e.key === 'Escape') {
     if (!$('#lightbox').hidden) { $('#lightbox').hidden = true; return; }
+    if ($('#motiveOverlay') && !$('#motiveOverlay').hidden) { closeMotive(); return; }
     if (!$('#eduOverlay').hidden) { closeEdu(); return; }
     if (!$('#wizOverlay').hidden) { closeWizard(); return; }
     if (!$('#overlay').hidden) { closeDrawer(); return; }
@@ -78,7 +79,7 @@ function render() {
   if (state.tab === 'logs') renderLogs();
   if (state.tab === 'pnl') renderPnl();
   if (state.tab === 'education') renderEducation();
-  if (state.tab === 'mentors') renderMentors();
+  if (state.tab === 'motivation') renderMotivation();
   if (state.tab === 'settings') renderSettings();
 }
 async function reload() { [state.logs, state.stats] = await Promise.all([gon.logs.list(), gon.logs.stats()]); render(); }
@@ -96,7 +97,7 @@ function renderHome() {
   $('#greeting').innerHTML = g.hello.map((w, i) => `<span class="w" style="animation-delay:${(state.homeAnimated ? 0 : 250) + i * 120}ms">${esc(w)}</span>`).join('');
   const sub = s.todayCount ? `${g.part}. Today: ${s.todayCount} trade${s.todayCount > 1 ? 's' : ''}, ${fmtR(s.todayR)}.` : `${g.part}. No trades logged today. Patience is a position too.`;
   setTimeout(() => typewrite($('#subGreeting'), sub, 14), state.homeAnimated ? 0 : 550);
-  $('#licName').textContent = p.name || 'Cole'; $('#licHandle').textContent = '@' + (p.handle || 'colehys'); $('#licAcct').textContent = p.account || '';
+  renderHomeQuote();
   state.homeAnimated = true;
 
   // rule streak
@@ -127,6 +128,16 @@ function renderHome() {
     : `<div class="empty small">No logs yet. <button class="link" id="firstLog">Log your first trade</button></div>`;
   $$('#recent .recent-row').forEach(r => r.onclick = () => openDrawer(state.logs.find(l => l.id === r.dataset.id)));
   const fl = $('#firstLog'); if (fl) fl.onclick = () => openWizard();
+}
+function renderHomeQuote() {
+  const el = $('#homeQuote');
+  if (!el) return;
+  const pinned = (state.motivation || []).filter(m => m.kind === 'quote' && m.pinned && m.text);
+  if (!pinned.length) { el.hidden = true; return; }
+  if (!pinned.some(q => q.id === state.homeQuoteId)) state.homeQuoteId = pinned[Math.floor(Math.random() * pinned.length)].id;
+  const q = pinned.find(m => m.id === state.homeQuoteId) || pinned[0];
+  el.hidden = false;
+  el.innerHTML = `<p>${esc(q.text)}</p>${q.author ? `<div class="muted small">— ${esc(q.author)}</div>` : ''}`;
 }
 function curveSvg(curve) {
   if (!curve || curve.length < 2) return `<div class="empty small">Your equity curve draws itself after two trades with a result in R.</div>`;
@@ -171,7 +182,7 @@ function renderLogs() {
   $('#logList').hidden = state.mode !== 'list'; $('#logCal').hidden = state.mode !== 'calendar';
   if (state.mode === 'calendar') return renderCalendar(rows);
   if (!state.logs.length) {
-    $('#logList').innerHTML = `<div class="empty card"><img class="mascot" src="assets/gon-portrait.jpg" alt=""><h3>No training logs yet</h3><p class="small">Every hunter starts somewhere.</p><button class="btn primary" id="emptyLog">Log your first trade</button></div>`;
+    $('#logList').innerHTML = `<div class="empty card"><img class="mascot" src="assets/gon-portrait.jpg" alt=""><h3>No logs yet</h3><p class="small">Write down the next trade you take.</p><button class="btn primary" id="emptyLog">Log your first trade</button></div>`;
     const m = $('#logList .mascot'); m.onerror = () => { m.onerror = null; m.src = FALLBACK_MASCOT; };
     $('#emptyLog').onclick = () => openWizard(); return;
   }
@@ -287,7 +298,20 @@ const STEPS = [
       <div><div class="k">Result</div><div class="v ${cls(+d.resultR)}">${d.resultR === '' ? '—' : fmtR(+d.resultR)}</div></div><div><div class="k">P&amp;L</div><div class="v ${cls(+d.pnl)}">${d.pnl === '' ? '—' : fmt$(+d.pnl)}</div></div>
       <div><div class="k">Rules</div><div class="v">${rr.followedPlan === true ? '<span class="pill kept">all kept</span>' : rr.followedPlan === false ? `<span class="pill broken">${rr.rulesBroken.length} broken</span>` : '—'}</div></div><div><div class="k">Feeling</div><div class="v" style="font-family:Inter">${esc(d.emotions.join(', ')) || '—'}</div></div>
       <div class="full"><div class="k">Screenshots</div><div class="v">${d.screenshots.length}</div></div></div>`; },
-    bind: () => {}, valid: () => null },
+    bind: d => {
+      d.recapPaths = d.recapPaths || [];
+      const note = document.createElement('div');
+      note.className = 'row gap wrap';
+      note.style.marginTop = '12px';
+      note.innerHTML = `<button type="button" class="btn sm" id="wRecap">Add video recap</button><span class="muted small" id="wRecapNote">${d.recapPaths.length ? d.recapPaths.length + ' video' + (d.recapPaths.length > 1 ? 's' : '') + ' for ' + d.date : 'Optional. It shows on the P&L calendar for this date.'}</span>`;
+      const review = $('#wizStage .review');
+      if (review) review.after(note);
+      const b = $('#wRecap');
+      if (b) b.onclick = async () => {
+        const paths = await gon.recap.pick();
+        if (paths && paths.length) { d.recapPaths.push(...paths); $('#wRecapNote').textContent = d.recapPaths.length + ' video' + (d.recapPaths.length > 1 ? 's' : '') + ' for ' + d.date; }
+      };
+    }, valid: () => null },
 ];
 function pickOne(sel, cb) { $$(sel + ' .pick').forEach(b => b.onclick = () => { $$(sel + ' .pick').forEach(x => x.classList.toggle('on', x === b)); cb(b.dataset.v); }); }
 function plannedR(d) { const e = +d.entry, s = +d.stop, t = +d.target; return d.entry !== '' && d.stop !== '' && d.target !== '' && e !== s && [e, s, t].every(Number.isFinite) ? (Math.abs(t - e) / Math.abs(e - s)).toFixed(2) + 'R' : null; }
@@ -328,6 +352,7 @@ async function wizNext() {
   const d = wiz.d, rr = rulesResult(state.settings.rules, d.rules);
   try {
     await gon.logs.create({ date: d.date, time: d.time, instrument: d.instrument, direction: d.direction, setup: d.setup, entry: d.entry, stop: d.stop, target: d.target, resultR: d.resultR, pnl: d.pnl, notes: d.notes, mindset: d.mindset, emotions: d.emotions, screenshots: d.screenshots, ...rr });
+    if (d.recapPaths && d.recapPaths.length) { try { await gon.recap.add({ date: d.date, srcPaths: d.recapPaths }); state.recaps = await gon.recap.list(); } catch (e) { console.log('[recap]', e); } }
   } catch (e) { $('#wErr').textContent = String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); return; }
   $('#wizStage').innerHTML = `<div class="saved-burst"><div class="check-circle"><svg width="40" height="40" viewBox="0 0 40 40"><path d="M10 21l7 7 14-15" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div><h2 style="margin-top:18px">Logged.</h2><p class="muted">${rr.followedPlan === true ? 'Rules kept. The flame grows. 🔥' : 'Saved to your training logs.'}</p></div>`;
   $('#wizBar').style.width = '100%';
@@ -370,43 +395,6 @@ $('#logForm').onsubmit = async e => {
 };
 $('#deleteLog').onclick = async () => { if (!state.editing || !confirm('Delete this log and its screenshots?')) return; await gon.logs.remove(state.editing.id); closeDrawer(); toast('Log deleted'); await reload(); };
 
-// ---------------- mentors ----------------
-let lastPollResult = null;
-async function renderMentors() {
-  const s = state.settings, cache = await gon.mentors.cache(), st = cache.status || {};
-  $('#mentorChips').innerHTML = s.mentors.map(h => `<span class="chip ${st[h.toLowerCase()]?.error ? 'err' : 'on'}" title="${esc(st[h.toLowerCase()]?.error || '')}">@${esc(h)}</span>`).join('') + `<button class="link" data-goto="settings">Edit mentors</button>`;
-  $('#mentorStatus').textContent = cache.lastPoll ? `last checked ${new Date(cache.lastPoll).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · every ${s.pollMinutes} min` : '';
-  const errs = (lastPollResult?.errors || []).filter(x => x !== 'NO_TOKEN');
-  $('#mentorErrors').innerHTML = errs.map(e => `<div class="alert">${esc(e)}</div>`).join('');
-  if (!s.bearerToken) {
-    $('#feed').innerHTML = `<div class="empty howto card" style="column-span:all"><h3 style="margin-bottom:8px">Connect the X API to see mentor posts</h3>
-      <p class="small">The Mentors feed reads posts through X's official API, which needs your own bearer token. Nothing is scraped.</p>
-      <ol class="small"><li>Sign in at <a class="link" href="https://console.x.com" target="_blank">console.x.com</a> (X Developer Console) and create a project + app.</li>
-      <li>Add API credits. Reads are pay-per-use, roughly $0.005 per post returned.</li>
-      <li>Copy the app's <b>Bearer Token</b> and paste it in <button class="link" data-goto="settings">Settings</button>.</li>
-      <li>Add your mentors' handles. New image posts appear here automatically.</li></ol></div>`;
-    return;
-  }
-  if (!s.mentors.length) { $('#feed').innerHTML = `<div class="empty card" style="column-span:all">No mentors yet. Add X handles in <button class="link" data-goto="settings">Settings</button>.</div>`; return; }
-  if (!cache.posts.length) { $('#feed').innerHTML = `<div style="column-span:all">${[0, 1, 2].map(() => '<div class="skeleton" style="height:220px;margin-bottom:14px"></div>').join('')}<div class="muted small">No image posts yet. Checking every ${s.pollMinutes} minutes.</div></div>`; return; }
-  const first = state.seenPosts.size === 0;
-  $('#feed').innerHTML = cache.posts.map((p, i) => {
-    const imgs = p.images.filter(im => im.local || im.remote), n = Math.min(imgs.length, 4);
-    return `<article class="card post ${!first && !state.seenPosts.has(p.id) ? 'new' : ''}" style="animation-delay:${Math.min(i, 9) * 50}ms">
-      <div class="imgs n${n}">${imgs.slice(0, 4).map(im => `<img src="${im.local ? mediaUrl(im.local) : ''}" alt="" loading="lazy">`).join('')}</div>
-      <div class="body"><div class="meta"><span><b>${esc(p.name || p.handle)}</b> @${esc(p.handle)}</span><span class="mono">${new Date(p.createdAt).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span></div>
-      <div class="cap">${esc(p.text)}</div><a class="link open" href="${esc(p.url)}" target="_blank">Open on X ↗</a></div></article>`;
-  }).join('');
-  $$('#feed .post').forEach((el, i) => { const p = cache.posts[i]; $$('img', el).forEach(im => im.onclick = () => lightbox(im.src, `@${p.handle} · ${new Date(p.createdAt).toLocaleString()} · ${p.text}`)); });
-  cache.posts.forEach(p => state.seenPosts.add(p.id));
-}
-$('#refreshMentors').onclick = async () => {
-  const b = $('#refreshMentors'); b.disabled = true; b.textContent = 'Checking…';
-  try { lastPollResult = await gon.mentors.poll(); toast(lastPollResult.added ? `${lastPollResult.added} new post${lastPollResult.added > 1 ? 's' : ''}` : 'No new posts'); }
-  finally { b.disabled = false; b.textContent = 'Refresh now'; renderMentors(); }
-};
-gon.mentors.onUpdate(r => { lastPollResult = r; if (r.added) toast(`${r.added} new mentor post${r.added > 1 ? 's' : ''}`); if (state.tab === 'mentors') renderMentors(); });
-
 // ---------------- settings ----------------
 let rulesDraft = [];
 function renderRulesEditor() {
@@ -418,8 +406,7 @@ $('#addRule').onclick = () => { rulesDraft.push(''); renderRulesEditor(); $$('#r
 async function renderSettings() {
   const s = state.settings;
   $('#sName').value = s.profile.name || ''; $('#sHandle').value = s.profile.handle || ''; $('#sAcct').value = s.profile.account || '';
-  $('#sMentors').value = s.mentors.map(h => '@' + h).join('\n'); $('#sPoll').value = s.pollMinutes;
-  $('#sToken').value = s.bearerToken; $('#sSplash').checked = s.splash !== false;
+  $('#sSplash').checked = s.splash !== false;
   rulesDraft = [...s.rules]; renderRulesEditor();
   $('#dataDir').textContent = await gon.app.dataDir();
   const ver = $('#appVersion');
@@ -429,7 +416,6 @@ async function renderSettings() {
   syncSongForm();
   renderBackgroundLibrary();
 }
-$('#toggleToken').onclick = () => { const t = $('#sToken'); t.type = t.type === 'password' ? 'text' : 'password'; $('#toggleToken').textContent = t.type === 'password' ? 'Show' : 'Hide'; };
 $('#openData').onclick = () => gon.app.openDataDir();
 
 let updateState = { status: 'idle' };
@@ -457,10 +443,8 @@ $('#checkUpdates').onclick = async () => {
 };
 $('#updateRestart').onclick = () => { if (updateState.status === 'ready') gon.updater.install(); };
 $('#saveSettings').onclick = async () => {
-  const before = state.settings;
-  state.settings = await gon.settings.save({ profile: { name: $('#sName').value.trim(), handle: $('#sHandle').value.trim().replace(/^@/, ''), account: $('#sAcct').value.trim() }, rules: rulesDraft, mentors: $('#sMentors').value, pollMinutes: +$('#sPoll').value, bearerToken: $('#sToken').value, splash: $('#sSplash').checked });
+  state.settings = await gon.settings.save({ profile: { name: $('#sName').value.trim(), handle: $('#sHandle').value.trim().replace(/^@/, ''), account: $('#sAcct').value.trim() }, rules: rulesDraft, splash: $('#sSplash').checked });
   renderSettings(); $('#saveMsg').textContent = 'Saved ✓'; setTimeout(() => $('#saveMsg').textContent = '', 1800); toast('Settings saved');
-  if (state.settings.bearerToken && (state.settings.bearerToken !== before.bearerToken || state.settings.mentors.join() !== before.mentors.join())) gon.mentors.poll().then(r => { lastPollResult = r; });
 };
 
 // ---------------- images ----------------
@@ -483,7 +467,7 @@ function splashOpen() {
 }
 function modalOpen() {
   const open = (id) => { const el = $(id); return !!(el && !el.hidden); };
-  return open('#lightbox') || open('#eduOverlay') || open('#wizOverlay') || open('#overlay');
+  return open('#lightbox') || open('#eduOverlay') || open('#motiveOverlay') || open('#wizOverlay') || open('#overlay');
 }
 function enterApp() {
   if (document.body.classList.contains('entered') && !document.body.classList.contains('booting')) return;
@@ -546,7 +530,7 @@ function returnToStart() {
   try { showEntranceBackground({ fresh: true }); } catch (e) { console.log('[background]', e); }
   try { playEntranceSong(); } catch (e) { console.log('[theme-song]', e); }
   try { paintNow(); } catch (e) { console.log('[clock]', e); }
-  requestAnimationFrame(() => { if (sp) sp.classList.remove('out'); });
+  requestAnimationFrame(() => { if (sp) sp.classList.remove('out'); sharpenEntrance(); });
 }
 function currentLibrary() {
   try {
@@ -600,6 +584,13 @@ function applyBackgroundChain(chain, index, token, fit) {
   const speed = (typeof backgroundsApi !== 'undefined') ? backgroundsApi.normalizeSpeed(item.speed) : (Number(item.speed) || 0.5);
   showEntranceVideo(url, speed, item, token, fail);
 }
+function sharpenEntrance() {
+  for (const el of [$('#splash'), $('.splash-stage'), $('#splashImage'), $('#splashVideo')]) {
+    if (!el) continue;
+    el.style.transform = 'none';
+    el.style.filter = 'none';
+  }
+}
 function showEntranceImage(url, item, token, fail) {
   const video = $('#splashVideo');
   const image = $('#splashImage');
@@ -612,6 +603,7 @@ function showEntranceImage(url, item, token, fail) {
     if (token !== bgToken || failed) return;
     entranceItemId = item.id;
     rememberBackground(item.id);
+    sharpenEntrance();
   };
   image.onerror = () => once(new Error('image failed'));
   if (image.getAttribute('src') === url && image.complete && image.naturalWidth) {
@@ -679,6 +671,7 @@ function entrance() {
   try { showEntranceBackground({ fresh: true }); } catch (e) { console.log('[background]', e); }
   try { playEntranceSong(); } catch (e) { console.log('[theme-song]', e); }
   try { paintNow(); } catch (e) { console.log('[clock]', e); }
+  sharpenEntrance();
 }
 $('#closeJournal').onclick = () => returnToStart();
 $('#splashShuffle').addEventListener('pointerdown', (ev) => {
@@ -1020,7 +1013,8 @@ function renderPnl() {
   const rows = cal.weeks.map(w => w.days.map(d => {
     const on = state.pnlDate === d.date ? ' on' : '';
     const body = d.trades ? `<span class="p">${fmt$(d.pnl)}</span><span class="rr">${fmtR(d.r)}</span>` : '';
-    return `<button type="button" class="pnl-cell${d.inMonth ? '' : ' other'}${d.date === ymd(new Date()) ? ' today' : ''}${on}" data-date="${d.date}" style="${d.trades ? paint(d.pnl) : ''}"><span class="d">${d.day}</span>${body}</button>`;
+    const dot = (state.recaps || []).some(r => r.date === d.date) ? '<span class="pnl-dot" title="Video recap"></span>' : '';
+    return `<button type="button" class="pnl-cell${d.inMonth ? '' : ' other'}${d.date === ymd(new Date()) ? ' today' : ''}${on}" data-date="${d.date}" style="${d.trades ? paint(d.pnl) : ''}"><span class="d">${d.day}${dot}</span>${body}</button>`;
   }).join('') + `<div class="pnl-cell week" style="${paint(w.totalPnl)}"><span class="d">${w.trades ? w.trades + ' trades' : '—'}</span><span class="p">${w.trades ? fmt$(w.totalPnl) : ''}</span><span class="rr">${w.trades ? fmtR(w.totalR) : ''}</span></div>`).join('');
   $('#pnlCal').innerHTML = `<div class="pnl-grid">${head}${rows}</div>`;
   $$('#pnlCal .pnl-cell[data-date]').forEach(b => b.onclick = () => { state.pnlDate = b.dataset.date; renderPnl(); });
@@ -1032,9 +1026,55 @@ function renderPnlDay() {
   const logs = state.logs.filter(l => l.date === date);
   const pnl = r2(logs.reduce((s, l) => s + (typeof l.pnl === 'number' ? l.pnl : 0), 0));
   const r = r2(logs.reduce((s, l) => s + (typeof l.resultR === 'number' ? l.resultR : 0), 0));
+  const recaps = (state.recaps || []).filter(r => r.date === date);
+  const prog = state.recapProgress && state.recapProgress.date === date ? `<div class="recap-progress" title="${esc(state.recapProgress.name)}"><span style="width:${Math.round((state.recapProgress.ratio || 0) * 100)}%"></span></div>` : '';
   box.innerHTML = `<div class="eyebrow">${niceDate(date)}</div><h3 class="${cls(pnl)}">${logs.length ? fmt$(pnl) : 'No trades'}</h3><div class="muted small mono">${logs.length ? fmtR(r) + ' · ' + logs.length + ' trade' + (logs.length > 1 ? 's' : '') : 'Nothing logged this day.'}</div>` +
-    logs.map(l => `<button type="button" class="pnl-trade" data-id="${l.id}"><span class="mono">${esc(l.time || '—')}</span><span>${esc(l.instrument)} <span class="muted">${esc(l.setup || l.direction)}</span></span><span class="mono ${cls(l.pnl)}">${fmt$(l.pnl)}</span></button>`).join('');
+    logs.map(l => `<button type="button" class="pnl-trade" data-id="${l.id}"><span class="mono">${esc(l.time || '—')}</span><span>${esc(l.instrument)} <span class="muted">${esc(l.setup || l.direction)}</span></span><span class="mono ${cls(l.pnl)}">${fmt$(l.pnl)}</span></button>`).join('') +
+    `<div class="row between" style="margin-top:16px"><h3>Video recaps</h3><button type="button" class="btn sm" id="addRecap">Add recap</button></div>${prog}` +
+    `<div class="recap-list">${recaps.map(recapCard).join('') || '<div class="muted small">No recap for this day yet.</div>'}</div>` +
+    `<form id="recapUrl" class="row gap" style="margin-top:8px"><input id="recapLink" placeholder="https://… YouTube or other link"><button class="btn sm" type="submit">Add link</button></form>`;
   $$('#pnlDay .pnl-trade').forEach(b => b.onclick = () => openDrawer(state.logs.find(l => l.id === b.dataset.id)));
+  const add = $('#addRecap'); if (add) add.onclick = () => addRecapFiles(date);
+  const form = $('#recapUrl'); if (form) form.onsubmit = async (e) => { e.preventDefault(); const url = $('#recapLink').value.trim(); if (!url) return; try { state.recaps = await gon.recap.add({ date, url, title: 'Link' }); renderPnl(); } catch (err) { toast(err.message || String(err)); } };
+  $$('#pnlDay [data-open]').forEach(b => b.onclick = () => gon.app.openExternal(b.dataset.open));
+  $$('#pnlDay [data-recap-del]').forEach(b => b.onclick = async () => { await gon.recap.remove(b.dataset.recapDel); state.recaps = await gon.recap.list(); renderPnl(); });
+  $$('#pnlDay [data-recap-move]').forEach(b => b.onclick = async () => { await moveRecap(date, b.dataset.recapMove, b.dataset.dir); });
+}
+function recapCard(r) {
+  let media = '';
+  if (r.file) {
+    let src = '';
+    try { src = recapFileUrl(r.date, r.file); } catch (e) { src = ''; }
+    media = `<video controls preload="metadata" playsinline src="${esc(src)}#t=0.1"></video>`;
+  } else if (r.url && youtubeId(r.url)) {
+    media = `<iframe src="https://www.youtube-nocookie.com/embed/${youtubeId(r.url)}" allowfullscreen></iframe>`;
+  } else if (r.url) {
+    media = `<button type="button" class="btn sm" data-open="${esc(r.url)}">Open link</button>`;
+  }
+  return `<article class="card recap-card"><div class="row between"><b class="ellipsis">${esc(r.title || 'Recap')}</b><span class="row gap"><button type="button" class="icon" data-recap-move="${r.id}" data-dir="-1" title="Move up">↑</button><button type="button" class="icon" data-recap-move="${r.id}" data-dir="1" title="Move down">↓</button><button type="button" class="icon" data-recap-del="${r.id}" title="Delete">✕</button></span></div>${r.note ? `<div class="muted small">${esc(r.note)}</div>` : ''}${media}</article>`;
+}
+async function addRecapFiles(date) {
+  try {
+    const paths = await gon.recap.pick();
+    if (!paths || !paths.length) return;
+    state.recapProgress = { date, name: 'Copying…', ratio: 0 };
+    renderPnl();
+    state.recaps = await gon.recap.add({ date, srcPaths: paths });
+    state.recapProgress = null;
+    renderPnl();
+  } catch (err) { state.recapProgress = null; toast(err.message || String(err)); renderPnl(); }
+}
+async function moveRecap(date, id, dir) {
+  const list = (state.recaps || []).filter(r => r.date === date);
+  const i = list.findIndex(r => r.id === id);
+  const j = i + Number(dir);
+  if (i < 0 || j < 0 || j >= list.length) return;
+  const ids = list.map(r => r.id);
+  const tmp = ids[i]; ids[i] = ids[j]; ids[j] = tmp;
+  state.recaps = state.recaps.map(r => r.date === date ? { ...r, order: ids.indexOf(r.id) } : r);
+  await gon.recap.reorder(date, ids);
+  state.recaps = await gon.recap.list();
+  renderPnl();
 }
 $('#pnlPrev').onclick = () => { const d = state.pnlMonth; state.pnlMonth = new Date(d.getFullYear(), d.getMonth() - 1, 1); state.pnlDate = null; renderPnl(); };
 $('#pnlNext').onclick = () => { const d = state.pnlMonth; state.pnlMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1); state.pnlDate = null; renderPnl(); };
@@ -1072,24 +1112,45 @@ function pnlCalendar(logs, year, month) {
 
 // ---------------- education ----------------
 function youtubeId(url) { const m = String(url || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/))([\w-]{11})/); return m ? m[1] : null; }
-function renderEducation() {
-  const q = ($('#eduSearch').value || '').trim().toLowerCase();
-  const mentors = [...new Set(state.education.map(v => v.mentor || 'Other'))];
-  $('#eduMentors').innerHTML = ['', ...mentors].map(m => `<button type="button" class="chip ${state.eduMentor === m ? 'on' : ''}" data-m="${esc(m)}">${m ? '@' + esc(m) : 'All'}</button>`).join('');
-  $$('#eduMentors .chip').forEach(c => c.onclick = () => { state.eduMentor = c.dataset.m; renderEducation(); });
-  let items = state.education.filter(v => !state.eduMentor || (v.mentor || 'Other') === state.eduMentor);
-  if (q) items = items.filter(v => [v.title, v.mentor, v.notes, (v.tags || []).join(' ')].join(' ').toLowerCase().includes(q));
-  if (!state.education.length) { $('#eduBoard').innerHTML = `<div class="empty card"><h3>No lessons yet</h3><p class="small">Add a video from your computer, or paste a YouTube link, and file it under a mentor.</p></div>`; return; }
-  const groups = new Map();
-  for (const v of items) { const k = v.mentor || 'Other'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(v); }
-  $('#eduBoard').innerHTML = [...groups.entries()].map(([mentor, list]) => `<section class="edu-group"><h3>@${esc(mentor)} <span class="muted small">${list.length}</span></h3><div class="edu-cards">${list.map(eduCard).join('')}</div></section>`).join('')
-    || `<div class="empty card"><h3>Nothing matches</h3></div>`;
-  $$('#eduBoard .edu-card').forEach(c => c.onclick = e => { if (e.target.closest('[data-watched]')) return; openEdu(c.dataset.id); });
-  $$('#eduBoard [data-watched]').forEach(b => b.onclick = async e => { e.stopPropagation(); const v = state.education.find(x => x.id === b.dataset.watched); const next = await gon.edu.update(v.id, { watched: !v.watched }); state.education = state.education.map(x => x.id === next.id ? next : x); renderEducation(); });
+function mentorColor(name) {
+  const m = (state.settings.eduMentors || []).find(x => x.name.toLowerCase() === String(name || '').toLowerCase());
+  return m ? m.color : '#9a9aa0';
 }
-function eduCard(v) {
+function mentorOptions(selected) {
+  const mentors = state.settings.eduMentors || [];
+  return `<option value="" ${selected ? '' : 'selected'}>Unsorted</option>` + mentors.map(m => `<option value="${esc(m.name)}" ${m.name === selected ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
+}
+function renderEducation() {
+  const mentors = state.settings.eduMentors || [];
+  const q = ($('#eduSearch').value || '').trim().toLowerCase();
+  const count = (name) => state.education.filter(v => name ? v.mentor === name : !v.mentor).length;
+  const side = $('#eduSide');
+  if (side) {
+    const rows = [`<button type="button" class="side ${state.eduMentor === '' ? 'on' : ''}" data-m=""><span>All</span><span class="count">${state.education.length}</span></button>`]
+      .concat(mentors.map(m => `<button type="button" class="side ${state.eduMentor === m.name ? 'on' : ''}" data-m="${esc(m.name)}"><span class="dot" style="background:${esc(m.color)}"></span><span class="ellipsis">${esc(m.name)}</span><span class="count">${count(m.name)}</span></button>`))
+      .concat([`<button type="button" class="side ${state.eduMentor === '__none' ? 'on' : ''}" data-m="__none"><span>Unsorted</span><span class="count">${count('')}</span></button>`]);
+    const manage = mentors.map(m => `<div class="mentor-row" data-id="${m.id}"><input type="color" value="${esc(m.color)}" data-color title="Color"><input type="text" value="${esc(m.name)}" data-name><button type="button" class="icon" data-del title="Delete mentor">✕</button></div>`).join('');
+    side.innerHTML = rows.join('') + `<div class="muted small" style="margin-top:12px">Mentors</div>` + manage + `<div class="mentor-row"><input type="text" id="newMentorName" placeholder="New mentor"><button type="button" class="btn sm" id="addMentorBtn">Add</button></div>`;
+    $$('#eduSide .side').forEach(b => b.onclick = () => { state.eduMentor = b.dataset.m; renderEducation(); });
+    $$('#eduSide [data-color]').forEach(input => input.onchange = async () => { state.settings = await gon.edu.mentorColor(input.closest('.mentor-row').dataset.id, input.value); renderEducation(); });
+    $$('#eduSide [data-name]').forEach(input => input.onchange = async () => { try { const res = await gon.edu.mentorRename(input.closest('.mentor-row').dataset.id, input.value); state.settings = res.settings; state.education = res.education; renderEducation(); } catch (err) { toast(err.message || String(err)); } });
+    $$('#eduSide [data-del]').forEach(b => b.onclick = async () => { const res = await gon.edu.mentorRemove(b.closest('.mentor-row').dataset.id); state.settings = res.settings; state.education = res.education; if (state.eduMentor && !state.settings.eduMentors.some(m => m.name === state.eduMentor)) state.eduMentor = ''; renderEducation(); });
+    $('#addMentorBtn').onclick = async () => { const name = $('#newMentorName').value.trim(); if (!name) return; state.settings = await gon.edu.mentorAdd(name); renderEducation(); };
+  }
+  let items = state.education.slice();
+  if (state.eduMentor === '__none') items = items.filter(v => !v.mentor);
+  else if (state.eduMentor) items = items.filter(v => v.mentor === state.eduMentor);
+  if (q) items = items.filter(v => [v.title, v.mentor, v.notes, (v.tags || []).join(' ')].join(' ').toLowerCase().includes(q));
+  if (!items.length) { $('#eduBoard').innerHTML = `<div class="empty card"><h3>${state.education.length ? 'Nothing matches' : 'No lessons yet'}</h3><p class="small">Add a video and choose the mentor it came from.</p></div>`; return; }
+  $('#eduBoard').innerHTML = `<div class="edu-cards">${items.map((v, i) => eduCard(v, i)).join('')}</div>`;
+  $$('#eduBoard .edu-card').forEach(c => c.onclick = e => { if (e.target.closest('select, button, a, input')) return; openEdu(c.dataset.id); });
+  $$('#eduBoard [data-watched]').forEach(b => b.onclick = async (e) => { e.stopPropagation(); const v = state.education.find(x => x.id === b.dataset.watched); const next = await gon.edu.update(v.id, { watched: !v.watched }); state.education = state.education.map(x => x.id === next.id ? next : x); renderEducation(); });
+  $$('#eduBoard [data-move]').forEach(sel => sel.onchange = async (e) => { e.stopPropagation(); const next = await gon.edu.update(sel.dataset.move, { mentor: sel.value }); state.education = state.education.map(x => x.id === next.id ? next : x); renderEducation(); });
+}
+function eduCard(v, i) {
+  const color = mentorColor(v.mentor);
   const thumb = v.thumb ? `style="background-image:url('gon://thumbs/${encodeURIComponent(v.thumb)}')"` : '';
-  return `<article class="card edu-card ${v.watched ? 'watched' : ''}" data-id="${v.id}"><div class="thumb" ${thumb}><span class="play">▶</span></div><div class="body"><div class="title">${esc(v.title)}</div><div class="muted small">${esc(v.date)}${v.watched ? ' · watched' : ''}</div><div class="chips">${(v.tags || []).map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div><button type="button" class="link" data-watched="${v.id}">${v.watched ? 'Mark unwatched' : 'Mark watched'}</button></div></article>`;
+  return `<article class="card edu-card ${v.watched ? 'watched' : ''}" data-id="${v.id}" style="animation:riseIn .22s ease-out both;animation-delay:${Math.min(i, 12) * 28}ms"><div class="thumb" ${thumb}><span class="play">▶</span></div><div class="body"><div class="who"><span class="dot" style="background:${esc(color)}"></span>${esc(v.mentor || 'Unsorted')}</div><div class="title">${esc(v.title)}</div><div class="muted small">${esc(v.date)}${v.watched ? ' · watched' : ''}</div><select data-move="${v.id}" title="Move to another mentor">${mentorOptions(v.mentor || '')}</select><button type="button" class="link" data-watched="${v.id}">${v.watched ? 'Mark unwatched' : 'Mark watched'}</button></div></article>`;
 }
 $('#eduSearch').addEventListener('input', renderEducation);
 $('#addEdu').onclick = () => openEdu(null);
@@ -1100,7 +1161,18 @@ function openEdu(id) {
   $('#eduDialogTitle').textContent = v ? 'Edit video' : 'Add a video';
   $('#eduDelete').hidden = !v;
   $('#eTitle').value = v?.title || '';
-  $('#eMentor').value = v?.mentor || '';
+  const mentorSel = $('#eMentor');
+  mentorSel.innerHTML = mentorOptions(v?.mentor || '') + '<option value="__new">Add new mentor…</option>';
+  mentorSel.value = v?.mentor && (state.settings.eduMentors || []).some(m => m.name === v.mentor) ? v.mentor : '';
+  mentorSel.onchange = async () => {
+    if (mentorSel.value !== '__new') return;
+    const name = window.prompt('Mentor name');
+    const clean = String(name || '').trim().replace(/^@/, '');
+    if (!clean) { mentorSel.value = v?.mentor || ''; return; }
+    state.settings = await gon.edu.mentorAdd(clean);
+    mentorSel.innerHTML = mentorOptions(clean) + '<option value="__new">Add new mentor…</option>';
+    mentorSel.value = clean;
+  };
   $('#eDate').value = v?.date || ymd(new Date());
   $('#eTags').value = (v?.tags || []).join(', ');
   $('#eUrl').value = v?.url || '';
@@ -1108,8 +1180,6 @@ function openEdu(id) {
   $('#eWatched').checked = !!v?.watched;
   $('#eFileName').textContent = v?.file ? 'Local video attached' : 'Or paste a link above';
   $('#eduErr').textContent = '';
-  const names = [...new Set([...(state.settings.mentors || []), ...state.education.map(x => x.mentor).filter(Boolean)])];
-  $('#mentorList').innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
   renderStamps(v?.stamps || []);
   renderEduPlayer(v);
   $('#eduOverlay').hidden = false;
@@ -1143,7 +1213,8 @@ $('#eduDelete').onclick = async () => {
   await gon.edu.remove(state.eduEditing); state.education = state.education.filter(v => v.id !== state.eduEditing); closeEdu(); renderEducation(); toast('Video deleted');
 };
 $('#eduSave').onclick = async () => {
-  const payload = { title: $('#eTitle').value.trim(), mentor: $('#eMentor').value.trim().replace(/^@/, ''), date: $('#eDate').value, tags: $('#eTags').value, url: $('#eUrl').value.trim(), notes: $('#eNotes').value, stamps: readStamps(), watched: $('#eWatched').checked };
+  const mentorValue = $('#eMentor').value === '__new' ? '' : $('#eMentor').value;
+  const payload = { title: $('#eTitle').value.trim(), mentor: mentorValue, date: $('#eDate').value, tags: $('#eTags').value, url: $('#eUrl').value.trim(), notes: $('#eNotes').value, stamps: readStamps(), watched: $('#eWatched').checked };
   try {
     let saved;
     if (state.eduEditing) saved = await gon.edu.update(state.eduEditing, payload);
@@ -1170,6 +1241,104 @@ function captureThumb(file) {
   });
 }
 
+function motiveMedia(item) {
+  if (item.file) {
+    let src = '';
+    try { src = storedVideoUrl('motive', item.file); } catch (e) { src = ''; }
+    return `<video controls preload="metadata" playsinline src="${esc(src)}#t=0.1"></video>`;
+  }
+  const id = youtubeId(item.url);
+  if (id) return `<iframe src="https://www.youtube-nocookie.com/embed/${id}" allowfullscreen></iframe>`;
+  if (item.url) return `<button type="button" class="btn sm" data-open="${esc(item.url)}">Open video</button>`;
+  return '';
+}
+function renderMotivation() {
+  $$('#motiveFilters .chip').forEach(b => b.classList.toggle('on', b.dataset.f === state.motiveFilter));
+  let items = state.motivation || [];
+  if (state.motiveFilter !== 'all') items = items.filter(m => m.kind === state.motiveFilter);
+  const pinned = items.filter(m => m.pinned);
+  const rest = items.filter(m => !m.pinned);
+  const ordered = pinned.concat(rest);
+  const board = $('#motiveBoard');
+  if (!ordered.length) { board.innerHTML = `<div class="empty card" style="width:100%"><h3>Nothing here yet</h3><p class="small">Add a quote or a video.</p></div>`; return; }
+  board.innerHTML = ordered.map((m, i) => {
+    const body = m.kind === 'quote'
+      ? `<p>${esc(m.text)}</p>${m.author ? `<div class="muted small">— ${esc(m.author)}</div>` : ''}`
+      : `<div class="title" style="font-weight:600;margin-bottom:8px">${esc(m.title)}</div>${motiveMedia(m)}`;
+    return `<article class="card motive-card" draggable="true" data-id="${m.id}" style="animation-delay:${Math.min(i, 10) * 30}ms">${body}<div class="row gap" style="margin-top:10px"><button type="button" class="btn sm" data-pin="${m.id}">${m.pinned ? 'Pinned' : 'Pin'}</button><button type="button" class="btn sm ghost" data-edit="${m.id}">Edit</button><button type="button" class="icon" data-del="${m.id}" title="Delete">✕</button></div></article>`;
+  }).join('');
+  $$('#motiveBoard [data-pin]').forEach(b => b.onclick = async () => { const m = state.motivation.find(x => x.id === b.dataset.pin); const next = await gon.motivation.update(m.id, { pinned: !m.pinned }); state.motivation = state.motivation.map(x => x.id === next.id ? next : x); renderMotivation(); renderHomeQuote(); });
+  $$('#motiveBoard [data-del]').forEach(b => b.onclick = async () => { await gon.motivation.remove(b.dataset.del); state.motivation = state.motivation.filter(x => x.id !== b.dataset.del); renderMotivation(); });
+  $$('#motiveBoard [data-edit]').forEach(b => b.onclick = () => openMotive(state.motivation.find(x => x.id === b.dataset.edit)));
+  $$('#motiveBoard [data-open]').forEach(b => b.onclick = () => gon.app.openExternal(b.dataset.open));
+  let dragId = '';
+  $$('#motiveBoard .motive-card').forEach(card => {
+    card.ondragstart = () => { dragId = card.dataset.id; };
+    card.ondragover = (e) => e.preventDefault();
+    card.ondrop = async (e) => {
+      e.preventDefault();
+      if (!dragId || dragId === card.dataset.id) return;
+      const ids = (state.motivation || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0)).map(m => m.id);
+      const from = ids.indexOf(dragId), to = ids.indexOf(card.dataset.id);
+      if (from < 0 || to < 0) return;
+      ids.splice(to, 0, ids.splice(from, 1)[0]);
+      state.motivation = await gon.motivation.reorder(ids);
+      renderMotivation();
+    };
+  });
+}
+function closeMotive() { $('#motiveOverlay').hidden = true; state.motiveSrc = null; state.motiveEditing = null; }
+function openMotive(item, kind) {
+  const m = item || null;
+  state.motiveEditing = m ? m.id : null;
+  state.motiveKind = m ? m.kind : (kind || 'quote');
+  state.motiveSrc = null;
+  const video = state.motiveKind === 'video';
+  $('#motiveTitle').textContent = m ? (video ? 'Edit video' : 'Edit quote') : (video ? 'Add a video' : 'Add a quote');
+  $('#motiveTextLabel').hidden = false;
+  if ($('#motiveTextLabel').firstChild) $('#motiveTextLabel').firstChild.textContent = video ? 'Title' : 'Quote';
+  $('#motiveAuthorLabel').hidden = video;
+  $('#motiveLinkLabel').hidden = !video;
+  $('#motiveFileRow').hidden = !video;
+  $('#mText').value = video ? (m?.title || '') : (m?.text || '');
+  $('#mAuthor').value = m?.author || '';
+  $('#mUrl').value = m?.url || '';
+  $('#mPin').checked = !!m?.pinned;
+  $('#mFileName').textContent = m?.file ? 'Local video attached' : 'Or paste a link';
+  $('#motiveErr').textContent = '';
+  $('#motiveOverlay').hidden = false;
+}
+$('#motiveFilters').addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (!b) return; state.motiveFilter = b.dataset.f; renderMotivation(); });
+$('#addQuote').onclick = () => openMotive(null, 'quote');
+$('#addMotiveVideo').onclick = () => openMotive(null, 'video');
+$('#motiveClose').onclick = closeMotive;
+$('#motiveCancel').onclick = closeMotive;
+$('#mPick').onclick = async () => { const p = await gon.motivation.pick(); if (!p) return; state.motiveSrc = p; $('#mFileName').textContent = p.split(/[/\\]/).pop(); };
+$('#motiveSave').onclick = async () => {
+  const video = state.motiveKind === 'video';
+  const fileLabel = state.motiveSrc ? state.motiveSrc.split(/[/\\]/).pop() : '';
+  const payload = {
+    kind: video ? 'video' : 'quote',
+    text: video ? '' : $('#mText').value.trim(),
+    title: video ? ($('#mText').value.trim() || fileLabel || 'Video') : '',
+    author: video ? '' : $('#mAuthor').value.trim(),
+    url: video ? $('#mUrl').value.trim() : '',
+    pinned: $('#mPin').checked,
+  };
+  try {
+    let saved;
+    if (state.motiveEditing) saved = await gon.motivation.update(state.motiveEditing, payload);
+    else { if (state.motiveSrc) payload.srcPath = state.motiveSrc; saved = await gon.motivation.create(payload); }
+    state.motivation = state.motiveEditing ? state.motivation.map(x => x.id === saved.id ? saved : x) : state.motivation.concat([saved]);
+    closeMotive(); renderMotivation(); toast('Saved');
+  } catch (err) { $('#motiveErr').textContent = err.message || String(err); }
+};
+if (gon.recap && gon.recap.onProgress) gon.recap.onProgress((p) => {
+  state.recapProgress = { date: state.pnlDate, name: p.name, ratio: Math.min(1, ((p.index || 0) + (p.ratio || 0)) / (p.total || 1)) };
+  const bar = document.querySelector('#pnlDay .recap-progress span');
+  if (bar) bar.style.width = Math.round(state.recapProgress.ratio * 100) + '%';
+});
+
 (async function init() {
   state.settings = await gon.settings.get();
   applyTheme(state.settings.theme || 'light');
@@ -1178,7 +1347,7 @@ function captureThumb(file) {
   gon.updater.state().then(applyUpdateState).catch(() => {});
   gon.app.version().then(v => { const el = $('#appVersion'); if (el) el.textContent = v; }).catch(() => {});
   setupImages();
-  [state.logs, state.stats, state.education] = await Promise.all([gon.logs.list(), gon.logs.stats(), gon.edu.list()]);
+  [state.logs, state.stats, state.education, state.motivation, state.recaps] = await Promise.all([gon.logs.list(), gon.logs.stats(), gon.edu.list(), gon.motivation.list(), gon.recap.list()]);
   const t = params.get('tab');
   const startTab = t === 'logs-calendar' ? 'logs' : (TABS.includes(t) ? t : 'home');
   if (t === 'logs-calendar') { state.mode = 'calendar'; syncMode(); }

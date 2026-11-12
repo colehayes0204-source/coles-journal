@@ -3,9 +3,8 @@
 const assert = require('assert');
 const fs = require('fs'), os = require('os'), path = require('path');
 const { Store, computeStats, computeRuleStreak, computePnlCalendar, normalizeHandles, youtubeId } = require('../src/store');
-const { MentorFeed } = require('../src/mentors');
 const { tradingSessions } = require('../src/sessions');
-const { audioExtension, safeStoredAudioName, themeSongFileUrl, safeStoredBackgroundName, backgroundFileUrl, backgroundKind } = require('../src/media-path');
+const { audioExtension, safeStoredAudioName, themeSongFileUrl, safeStoredBackgroundName, backgroundFileUrl, backgroundKind, recapFileUrl } = require('../src/media-path');
 const { shouldDismissEntrance, shouldReturnToStart } = require('../src/entrance-gate');
 const { normalizeLibrary, pickStartBackground, nextShuffleBackground, fallbackChain, normalizeSpeed } = require('../src/backgrounds');
 
@@ -97,74 +96,37 @@ function mockFetch(routes, calls) {
     assert.strictEqual(computeStats([{ date: '2026-11-01', followedPlan: true, resultR: 1, createdAt: 1 }]).rules.current, 1);
   });
 
-  console.log('Mentors (mocked X API v2)');
-  const mdir = tmp(); const ms = new Store(mdir);
-  await test('no token -> NO_TOKEN, no network', async () => {
-    const calls = []; ms.saveSettings({ mentors: ['mentorA'] });
-    const r = await new MentorFeed({ store: ms, fetchImpl: mockFetch([], calls) }).poll();
-    assert.deepStrictEqual(r.errors, ['NO_TOKEN']); assert.strictEqual(calls.length, 0);
+  console.log('Mentors, motivation, recaps');
+  await test('saved X handles and education mentors become the mentor list without dropping a video', () => {
+    const dir = tmp();
+    fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ mentors: ['ict_mentor'], profile: { name: 'Cole' } }));
+    fs.writeFileSync(path.join(dir, 'education.json'), JSON.stringify([{ id: 'e1', title: 'Lesson', mentor: 'nq_mentor', url: 'https://example.com/v', createdAt: 1, date: '2026-11-10' }]));
+    const store = new Store(dir);
+    const names = store.getSettings().eduMentors.map(m => m.name).sort();
+    assert.deepStrictEqual(names, ['ict_mentor', 'nq_mentor']);
+    assert.strictEqual(store.listEducation()[0].mentor, 'nq_mentor');
+    const renamed = store.renameEduMentor(store.getSettings().eduMentors.find(m => m.name === 'nq_mentor').id, 'NQ Mentor');
+    assert.strictEqual(renamed.education[0].mentor, 'NQ Mentor');
+    const removed = store.deleteEduMentor(renamed.settings.eduMentors.find(m => m.name === 'NQ Mentor').id);
+    assert.strictEqual(removed.education[0].mentor, '');
   });
-  const userRoute = [/users\/by\/username\/mentorA/, { body: { data: { id: '111', name: 'Mentor A', username: 'mentorA' } } }];
-  const page1 = { body: {
-    data: [
-      { id: '1003', text: 'NQ long, 5R ✅', created_at: '2026-11-10T15:02:00.000Z', attachments: { media_keys: ['3_a'] } },
-      { id: '1002', text: 'text only, no image', created_at: '2026-11-09T15:00:00.000Z' },
-      { id: '1001', text: 'ES short recap', created_at: '2026-11-08T15:00:00.000Z', attachments: { media_keys: ['3_b', '7_c'] } },
-    ],
-    includes: { media: [
-      { media_key: '3_a', type: 'photo', url: 'https://pbs.twimg.com/media/a.jpg' },
-      { media_key: '3_b', type: 'photo', url: 'https://pbs.twimg.com/media/b.png' },
-      { media_key: '7_c', type: 'video', preview_image_url: 'https://pbs.twimg.com/ext_tw_video_thumb/c.jpg' },
-    ] } } };
-  ms.saveSettings({ bearerToken: 'TEST_TOKEN', mentors: ['mentorA'] });
-  const calls = [];
-  const dl = async (url, name) => { fs.writeFileSync(path.join(ms.mediaDir, name), 'img'); return name; };
-  let feed = new MentorFeed({ store: ms, fetchImpl: mockFetch([userRoute, [/users\/111\/tweets/, page1]], calls), download: dl });
-  await test('first poll: lookup user, fetch tweets with required params, keep image posts only', async () => {
-    const r = await feed.poll();
-    assert.strictEqual(r.added, 2); assert.deepStrictEqual(r.errors, []);
-    const tl = new URL(calls[1].url);
-    assert.strictEqual(tl.searchParams.get('expansions'), 'attachments.media_keys');
-    assert.ok(tl.searchParams.get('media.fields').includes('url') && tl.searchParams.get('media.fields').includes('preview_image_url'));
-    assert.ok(tl.searchParams.get('tweet.fields').includes('created_at'));
-    assert.strictEqual(tl.searchParams.get('since_id'), null);
-    assert.strictEqual(calls[0].auth, 'Bearer TEST_TOKEN');
-    const c = ms.getMentorCache();
-    assert.deepStrictEqual(c.posts.map(p => p.id), ['1003', '1001']); // newest first, text-only skipped
-    assert.strictEqual(c.posts[0].text, 'NQ long, 5R ✅'); assert.strictEqual(c.posts[0].createdAt, '2026-11-10T15:02:00.000Z');
-    assert.strictEqual(c.posts[1].images.length, 2); assert.ok(c.posts[1].images.every(i => i.local));
-  });
-  await test('second poll: cached user id (no lookup), since_id = newest, adds only new', async () => {
-    calls.length = 0;
-    feed = new MentorFeed({ store: ms, fetchImpl: mockFetch([[/users\/111\/tweets/, { body: { data: [{ id: '1004', text: 'new one', created_at: '2026-11-11T15:00:00.000Z', attachments: { media_keys: ['3_d'] } }], includes: { media: [{ media_key: '3_d', type: 'photo', url: 'https://pbs.twimg.com/media/d.jpg' }] } } }]], calls), download: dl });
-    const r = await feed.poll();
-    assert.strictEqual(calls.length, 1); assert.strictEqual(new URL(calls[0].url).searchParams.get('since_id'), '1003');
-    assert.strictEqual(r.added, 1); assert.deepStrictEqual(ms.getMentorCache().posts.map(p => p.id), ['1004', '1003', '1001']);
-  });
-  await test('429 rate limit: backs off until x-rate-limit-reset, keeps cache', async () => {
-    let now = 1_700_000_000_000; const reset = Math.floor(now / 1000) + 600;
-    calls.length = 0;
-    feed = new MentorFeed({ store: ms, now: () => now, fetchImpl: mockFetch([[/tweets/, { status: 429, headers: { 'x-rate-limit-reset': String(reset) }, body: { title: 'Too Many Requests' } }]], calls), download: dl });
-    const r = await feed.poll();
-    assert.strictEqual(r.rateLimitedUntil, reset * 1000); assert.match(r.errors[0], /Rate limited/);
-    const r2 = await feed.poll(); assert.strictEqual(calls.length, 1, 'no request while blocked'); assert.match(r2.errors[0], /Rate limited/);
-    assert.strictEqual(ms.getMentorCache().posts.length, 3);
-  });
-  await test('401 bad token and unknown user produce readable errors', async () => {
-    ms.saveSettings({ mentors: ['mentorA', 'ghost'] });
-    const c = ms.getMentorCache(); delete c.users.mentora; ms.saveMentorCache(c);
-    feed = new MentorFeed({ store: ms, fetchImpl: mockFetch([[/username\/mentorA/, { status: 401, body: { title: 'Unauthorized' } }], [/username\/ghost/, { body: { errors: [{ detail: 'Could not find user with username: [ghost].' }] } }]], []) });
-    const r = await feed.poll();
-    assert.match(r.errors[0], /401/); assert.match(r.errors[1], /@ghost: Could not find user/);
-  });
-  await test('network failure is caught', async () => {
-    feed = new MentorFeed({ store: ms, fetchImpl: async () => { throw new Error('ENOTFOUND api.x.com'); } });
-    const r = await feed.poll(); assert.match(r.errors[0], /Network error/);
-  });
-  await test('removing a mentor drops their cached posts', async () => {
-    ms.saveSettings({ mentors: ['someoneElse'] });
-    await new MentorFeed({ store: ms, fetchImpl: mockFetch([[/username/, { status: 403, body: { title: 'Forbidden' } }]], []) }).poll();
-    assert.strictEqual(ms.getMentorCache().posts.length, 0);
+  await test('a quote can be pinned and a recap file is copied byte for byte', async () => {
+    const dir = tmp();
+    const nested = path.join(dir, "Cole's Journal");
+    fs.mkdirSync(nested);
+    const store = new Store(path.join(dir, 'data'));
+    const quote = store.createMotivation({ kind: 'quote', text: 'Stay with the plan.', author: 'Cole', pinned: true });
+    assert.strictEqual(store.listMotivation()[0].id, quote.id);
+    assert.strictEqual(store.listMotivation()[0].pinned, true);
+    const bytes = Buffer.from('ftyp-unique-recap-bytes');
+    const src = path.join(nested, "Morning recap.MP4");
+    fs.writeFileSync(src, bytes);
+    const item = await store.addRecap({ date: '2026-11-12', srcPath: src, title: 'Morning' });
+    assert.deepStrictEqual(fs.readFileSync(store.recapPath(item.date, item.file)), bytes);
+    assert.ok(store.recapPath(item.date, item.file).includes(path.join('recaps', '2026-11-12')));
+    assert.strictEqual(recapFileUrl(item.date, item.file), 'journal-media://recap/2026-11-12/' + item.file);
+    assert.strictEqual(store.deleteRecap(item.id), true);
+    assert.strictEqual(fs.existsSync(store.recapPath(item.date, item.file)), false);
   });
 
   console.log('P&L calendar');

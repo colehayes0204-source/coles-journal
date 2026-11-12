@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { safeStoredAudioName, themeSongFileUrl, safeStoredBackgroundName, backgroundFileUrl, backgroundKind } = require('./media-path');
+const { safeStoredAudioName, themeSongFileUrl, safeStoredBackgroundName, backgroundFileUrl, backgroundKind, safeStoredVideoName, storedVideoUrl, recapFileUrl } = require('./media-path');
 const { normalizeLibrary } = require('./backgrounds');
 
 const DEFAULT_SETTINGS = {
@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
   bearerToken: '',
   splash: true,
   theme: 'light', // light | dark | system
+  eduMentors: [],
   themeSong: { enabled: true, volume: 0.7, file: '', name: '' },
   startScreen: { mode: 'random', fit: 'fill', selectedId: 'default', lastId: '', items: [] },
   rules: [
@@ -50,6 +51,10 @@ class Store {
     this.settingsFile = path.join(dir, 'settings.json');
     this.cacheFile = path.join(dir, 'mentor-cache.json');
     this.eduFile = path.join(dir, 'education.json');
+    this.motiveFile = path.join(dir, 'motivation.json');
+    this.recapFile = path.join(dir, 'recaps.json');
+    this.motiveDir = path.join(dir, 'motivation');
+    this.recapDir = path.join(dir, 'recaps');
     this.videosDir = path.join(dir, 'videos');
     this.thumbsDir = path.join(dir, 'thumbs');
     this.songDir = path.join(dir, 'theme');
@@ -60,6 +65,8 @@ class Store {
     fs.mkdirSync(this.thumbsDir, { recursive: true });
     fs.mkdirSync(this.songDir, { recursive: true });
     fs.mkdirSync(this.bgDir, { recursive: true });
+    fs.mkdirSync(this.motiveDir, { recursive: true });
+    fs.mkdirSync(this.recapDir, { recursive: true });
   }
 
   // ---------- settings ----------
@@ -70,6 +77,7 @@ class Store {
       profile: { ...DEFAULT_SETTINGS.profile, ...(s.profile || {}) },
       themeSong: { ...DEFAULT_SETTINGS.themeSong, ...(s.themeSong || {}) },
       startScreen: normalizeLibrary(s.startScreen),
+      eduMentors: this._eduMentors(s),
     };
   }
   saveSettings(patch) {
@@ -94,6 +102,7 @@ class Store {
       merged.items = incoming.items || cur.startScreen.items;
       next.startScreen = normalizeLibrary(merged);
     } else next.startScreen = normalizeLibrary(cur.startScreen);
+    next.eduMentors = patch.eduMentors ? ensureEduMentors({ eduMentors: patch.eduMentors }, []) : cur.eduMentors;
     next.pollMinutes = Math.max(1, Math.min(1440, Number(next.pollMinutes) || 15));
     next.bearerToken = String(next.bearerToken || '').trim();
     writeJSON(this.settingsFile, next);
@@ -333,6 +342,189 @@ class Store {
   importVideo(srcPath) {
     return this._importFile(srcPath, this.videosDir, ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.mkv']);
   }
+
+  _eduMentors(saved) {
+    const edu = readJSON(this.eduFile, []);
+    const list = ensureEduMentors(saved || {}, edu);
+    if (JSON.stringify(saved && saved.eduMentors || null) !== JSON.stringify(list)) {
+      try {
+        const raw = readJSON(this.settingsFile, {});
+        raw.eduMentors = list;
+        writeJSON(this.settingsFile, raw);
+      } catch (e) { console.log('[mentors]', e && e.message ? e.message : e); }
+    }
+    return list;
+  }
+  addEduMentor(name, color) {
+    const cur = this.getSettings();
+    const clean = cleanMentorName(name);
+    if (!clean) throw new Error('name is required');
+    if (cur.eduMentors.some(m => m.name.toLowerCase() === clean.toLowerCase())) return cur;
+    return this.saveSettings({ eduMentors: cur.eduMentors.concat([{ id: crypto.randomUUID(), name: clean, color: cleanColor(color, cur.eduMentors.length) }]) });
+  }
+  renameEduMentor(id, name) {
+    const cur = this.getSettings();
+    const clean = cleanMentorName(name);
+    if (!clean) throw new Error('name is required');
+    const prev = cur.eduMentors.find(m => m.id === id);
+    if (!prev) throw new Error('mentor not found');
+    if (cur.eduMentors.some(m => m.id !== id && m.name.toLowerCase() === clean.toLowerCase())) throw new Error('that mentor already exists');
+    const settings = this.saveSettings({ eduMentors: cur.eduMentors.map(m => m.id === id ? { ...m, name: clean } : m) });
+    if (prev.name !== clean) {
+      const items = readJSON(this.eduFile, []);
+      let changed = false;
+      for (const item of items) if (String(item.mentor || '').toLowerCase() === prev.name.toLowerCase()) { item.mentor = clean; changed = true; }
+      if (changed) writeJSON(this.eduFile, items);
+    }
+    return { settings, education: this.listEducation() };
+  }
+  recolorEduMentor(id, color) {
+    const cur = this.getSettings();
+    return this.saveSettings({ eduMentors: cur.eduMentors.map(m => m.id === id ? { ...m, color: cleanColor(color, 0) } : m) });
+  }
+  deleteEduMentor(id) {
+    const cur = this.getSettings();
+    const prev = cur.eduMentors.find(m => m.id === id);
+    if (!prev) return { settings: cur, education: this.listEducation() };
+    const settings = this.saveSettings({ eduMentors: cur.eduMentors.filter(m => m.id !== id) });
+    const items = readJSON(this.eduFile, []);
+    let changed = false;
+    for (const item of items) if (String(item.mentor || '').toLowerCase() === prev.name.toLowerCase()) { item.mentor = ''; changed = true; }
+    if (changed) writeJSON(this.eduFile, items);
+    return { settings, education: this.listEducation() };
+  }
+
+  listMotivation() {
+    return readJSON(this.motiveFile, []).slice().sort((a, b) => (a.order || 0) - (b.order || 0) || (a.createdAt || 0) - (b.createdAt || 0));
+  }
+  createMotivation(input) {
+    const items = readJSON(this.motiveFile, []);
+    const now = Date.now();
+    const item = { id: crypto.randomUUID(), createdAt: now, updatedAt: now, order: items.length, ...this._cleanMotive(input) };
+    items.push(item);
+    writeJSON(this.motiveFile, items);
+    return item;
+  }
+  updateMotivation(id, patch) {
+    const items = readJSON(this.motiveFile, []);
+    const i = items.findIndex(x => x.id === id);
+    if (i < 0) throw new Error('item not found');
+    const prev = items[i];
+    const next = this._cleanMotive({ ...prev, ...patch, kind: prev.kind });
+    if (prev.file && prev.file !== next.file) this._rmFile(this.motiveDir, prev.file);
+    items[i] = { ...prev, ...next, updatedAt: Date.now() };
+    writeJSON(this.motiveFile, items);
+    return items[i];
+  }
+  deleteMotivation(id) {
+    const items = readJSON(this.motiveFile, []);
+    const item = items.find(x => x.id === id);
+    if (!item) return false;
+    if (item.file) this._rmFile(this.motiveDir, item.file);
+    writeJSON(this.motiveFile, items.filter(x => x.id !== id));
+    return true;
+  }
+  reorderMotivation(ids) {
+    const items = readJSON(this.motiveFile, []);
+    const rank = new Map((ids || []).map((id, i) => [id, i]));
+    for (const item of items) if (rank.has(item.id)) item.order = rank.get(item.id);
+    writeJSON(this.motiveFile, items);
+    return this.listMotivation();
+  }
+  importMotiveVideo(srcPath) {
+    if (!fs.existsSync(srcPath)) throw new Error('file not found');
+    const file = safeStoredVideoName(crypto.randomUUID(), srcPath);
+    fs.copyFileSync(srcPath, path.join(this.motiveDir, file));
+    return file;
+  }
+  motivePath(name) {
+    const base = decodeURIComponent(String(name || '').split('/').pop());
+    const url = storedVideoUrl('motive', base);
+    const safe = decodeURIComponent(url.slice(url.lastIndexOf('/') + 1));
+    const root = path.resolve(this.motiveDir);
+    const full = path.resolve(root, safe);
+    if (full !== path.join(root, safe)) throw new Error('unsafe media name');
+    return full;
+  }
+  _cleanMotive(input) {
+    const kind = input.kind === 'video' ? 'video' : 'quote';
+    const text = String(input.text || '').trim().slice(0, 2000);
+    const title = String(input.title || '').trim().slice(0, 160);
+    const author = String(input.author || '').trim().slice(0, 80);
+    const note = String(input.note || '').trim().slice(0, 2000);
+    const url = String(input.url || '').trim();
+    const file = path.basename(String(input.file || '').trim());
+    if (kind === 'quote' && !text) throw new Error('quote text is required');
+    if (kind === 'video') {
+      if (!title) throw new Error('title is required');
+      if (!url && !file) throw new Error('a video file or URL is required');
+      if (url && !/^https:\/\//i.test(url)) throw new Error('URL must start with https://');
+    }
+    return { kind, text, title, author, note, url: kind === 'video' ? url : '', file: kind === 'video' ? file : '', pinned: !!input.pinned };
+  }
+
+  listRecaps() {
+    return readJSON(this.recapFile, []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.order || 0) - (b.order || 0) || (a.createdAt || 0) - (b.createdAt || 0));
+  }
+  async addRecap(input, onProgress) {
+    const date = String(input.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('date must be YYYY-MM-DD');
+    let file = '';
+    if (input.srcPath) {
+      if (!fs.existsSync(input.srcPath)) throw new Error('file not found');
+      file = safeStoredVideoName(crypto.randomUUID(), input.srcPath);
+      const destDir = path.join(this.recapDir, date);
+      fs.mkdirSync(destDir, { recursive: true });
+      await copyFileProgress(input.srcPath, path.join(destDir, file), onProgress);
+    }
+    const url = String(input.url || '').trim();
+    if (url && !/^https:\/\//i.test(url)) throw new Error('URL must start with https://');
+    if (!file && !url) throw new Error('a video file or URL is required');
+    const items = readJSON(this.recapFile, []);
+    const item = {
+      id: crypto.randomUUID(), createdAt: Date.now(), date, file, url,
+      title: String(input.title || (input.srcPath ? path.basename(input.srcPath) : '')).trim().slice(0, 160),
+      note: String(input.note || '').trim().slice(0, 2000),
+      order: items.filter(r => r.date === date).length,
+    };
+    items.push(item);
+    writeJSON(this.recapFile, items);
+    return item;
+  }
+  updateRecap(id, patch) {
+    const items = readJSON(this.recapFile, []);
+    const i = items.findIndex(x => x.id === id);
+    if (i < 0) throw new Error('recap not found');
+    if (patch.title !== undefined) items[i].title = String(patch.title || '').trim().slice(0, 160);
+    if (patch.note !== undefined) items[i].note = String(patch.note || '').trim().slice(0, 2000);
+    writeJSON(this.recapFile, items);
+    return items[i];
+  }
+  deleteRecap(id) {
+    const items = readJSON(this.recapFile, []);
+    const item = items.find(x => x.id === id);
+    if (!item) return false;
+    if (item.file) { try { fs.unlinkSync(this.recapPath(item.date, item.file)); } catch (e) {} }
+    writeJSON(this.recapFile, items.filter(x => x.id !== id));
+    return true;
+  }
+  reorderRecaps(date, ids) {
+    const items = readJSON(this.recapFile, []);
+    const rank = new Map((ids || []).map((id, i) => [id, i]));
+    for (const item of items) if (item.date === date && rank.has(item.id)) item.order = rank.get(item.id);
+    writeJSON(this.recapFile, items);
+    return this.listRecaps().filter(r => r.date === date);
+  }
+  recapPath(date, name) {
+    const url = recapFileUrl(date, name);
+    const parts = new URL(url).pathname.split('/').filter(Boolean);
+    const day = parts[0];
+    const base = decodeURIComponent(parts[1] || '');
+    const root = path.resolve(this.recapDir, day);
+    const full = path.resolve(root, base);
+    if (full !== path.join(root, base)) throw new Error('unsafe media name');
+    return full;
+  }
   saveThumbBuffer(buf, ext) {
     const name = crypto.randomUUID() + (ext || '.jpg');
     fs.writeFileSync(path.join(this.thumbsDir, name), buf);
@@ -358,6 +550,44 @@ class Store {
   _rmFile(dir, name) { try { fs.unlinkSync(path.join(dir, path.basename(name))); } catch {} }
 }
 
+const MENTOR_COLORS = ['#6ea8fe', '#e09f6d', '#7dcea0', '#d4a5d8', '#8fd0c6', '#e8c87a', '#f0a0a0', '#b0b7c3'];
+function cleanMentorName(name) { return String(name || '').trim().replace(/^@/, '').slice(0, 40); }
+function cleanColor(color, index) {
+  const c = String(color || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(c) ? c.toLowerCase() : MENTOR_COLORS[index % MENTOR_COLORS.length];
+}
+function ensureEduMentors(saved, eduItems) {
+  const list = [];
+  const have = new Set();
+  const add = (entry) => {
+    const clean = cleanMentorName(entry && entry.name);
+    if (!clean || have.has(clean.toLowerCase())) return;
+    have.add(clean.toLowerCase());
+    const id = entry && /^[A-Za-z0-9-]{8,80}$/.test(entry.id || '') ? entry.id : crypto.randomUUID();
+    list.push({ id, name: clean, color: cleanColor(entry && entry.color, list.length) });
+  };
+  if (Array.isArray(saved.eduMentors)) {
+    for (const m of saved.eduMentors) add(m || {});
+  } else {
+    for (const h of saved.mentors || []) add({ name: h });
+  }
+  for (const item of eduItems || []) add({ name: item && item.mentor });
+  return list;
+}
+function copyFileProgress(src, dest, onProgress) {
+  return new Promise((resolve, reject) => {
+    let total = 1;
+    try { total = Math.max(1, fs.statSync(src).size); } catch (e) { reject(e); return; }
+    let sent = 0;
+    const rs = fs.createReadStream(src);
+    const ws = fs.createWriteStream(dest);
+    rs.on('data', (buf) => { sent += buf.length; if (onProgress) onProgress(Math.min(1, sent / total)); });
+    rs.on('error', reject);
+    ws.on('error', reject);
+    ws.on('finish', () => resolve());
+    rs.pipe(ws);
+  });
+}
 function normalizeHandles(list) {
   const arr = Array.isArray(list) ? list : String(list).split(/[\s,]+/);
   const out = [];
