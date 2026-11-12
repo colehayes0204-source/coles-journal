@@ -4,7 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { safeStoredAudioName, themeSongFileUrl } = require('./media-path');
+const { safeStoredAudioName, themeSongFileUrl, safeStoredBackgroundName, backgroundFileUrl, backgroundKind } = require('./media-path');
+const { normalizeLibrary } = require('./backgrounds');
 
 const DEFAULT_SETTINGS = {
   profile: { name: 'Cole', handle: 'colehys', account: 'Tradovate $1,000', startBalance: 1000 },
@@ -14,6 +15,7 @@ const DEFAULT_SETTINGS = {
   splash: true,
   theme: 'light', // light | dark | system
   themeSong: { enabled: true, volume: 0.7, file: '', name: '' },
+  startScreen: { mode: 'random', fit: 'fill', selectedId: 'default', lastId: '', items: [] },
   rules: [
     'No revenge trading.',
     'No trading without a setup.',
@@ -51,11 +53,13 @@ class Store {
     this.videosDir = path.join(dir, 'videos');
     this.thumbsDir = path.join(dir, 'thumbs');
     this.songDir = path.join(dir, 'theme');
+    this.bgDir = path.join(dir, 'backgrounds');
     fs.mkdirSync(this.shotsDir, { recursive: true });
     fs.mkdirSync(this.mediaDir, { recursive: true });
     fs.mkdirSync(this.videosDir, { recursive: true });
     fs.mkdirSync(this.thumbsDir, { recursive: true });
     fs.mkdirSync(this.songDir, { recursive: true });
+    fs.mkdirSync(this.bgDir, { recursive: true });
   }
 
   // ---------- settings ----------
@@ -65,6 +69,7 @@ class Store {
       ...DEFAULT_SETTINGS, ...s,
       profile: { ...DEFAULT_SETTINGS.profile, ...(s.profile || {}) },
       themeSong: { ...DEFAULT_SETTINGS.themeSong, ...(s.themeSong || {}) },
+      startScreen: normalizeLibrary(s.startScreen),
     };
   }
   saveSettings(patch) {
@@ -83,6 +88,12 @@ class Store {
       next.themeSong = song;
     }
     if (patch.theme) next.theme = ['light', 'dark', 'system'].includes(patch.theme) ? patch.theme : cur.theme || 'light';
+    if (patch.startScreen) {
+      const incoming = patch.startScreen;
+      const merged = { ...cur.startScreen, ...incoming };
+      merged.items = incoming.items || cur.startScreen.items;
+      next.startScreen = normalizeLibrary(merged);
+    } else next.startScreen = normalizeLibrary(cur.startScreen);
     next.pollMinutes = Math.max(1, Math.min(1440, Number(next.pollMinutes) || 15));
     next.bearerToken = String(next.bearerToken || '').trim();
     writeJSON(this.settingsFile, next);
@@ -112,6 +123,67 @@ class Store {
     return full;
   }
   themeSongUrl(name) { return themeSongFileUrl(name); }
+
+  importBackgrounds(srcPaths) {
+    const lib = this.getSettings().startScreen;
+    const items = lib.items.map(item => ({ ...item }));
+    for (const srcPath of srcPaths || []) {
+      try {
+        if (!srcPath || !fs.existsSync(srcPath)) throw new Error('file not found');
+        const id = crypto.randomUUID();
+        const file = safeStoredBackgroundName(id, srcPath);
+        fs.copyFileSync(srcPath, path.join(this.bgDir, file));
+        const display = String(srcPath).replace(/\\/g, '/').split('/').pop();
+        items.push({ id, builtin: false, kind: backgroundKind(file), file, name: display, enabled: true, speed: 0.5 });
+      } catch (e) {
+        console.log('[background]', e && e.message ? e.message : e);
+      }
+    }
+    return this.saveSettings({ startScreen: { ...lib, items } });
+  }
+  removeBackground(id) {
+    const lib = this.getSettings().startScreen;
+    const item = lib.items.find(i => i.id === id);
+    if (!item || item.builtin) return this.getSettings();
+    if (item.file) this._rmFile(this.bgDir, item.file);
+    return this.saveSettings({
+      startScreen: {
+        ...lib,
+        items: lib.items.filter(i => i.id !== id),
+        selectedId: lib.selectedId === id ? 'default' : lib.selectedId,
+        lastId: lib.lastId === id ? '' : lib.lastId,
+      },
+    });
+  }
+  updateBackground(id, patch) {
+    const lib = this.getSettings().startScreen;
+    const items = lib.items.map(item => {
+      if (item.id !== id) return item;
+      const next = { ...item };
+      if (patch && patch.enabled !== undefined) next.enabled = !!patch.enabled;
+      if (patch && patch.speed !== undefined) next.speed = patch.speed;
+      return next;
+    });
+    return this.saveSettings({ startScreen: { ...lib, items } });
+  }
+  setStartPrefs(patch) {
+    const lib = this.getSettings().startScreen;
+    const next = { ...lib };
+    if (patch && patch.mode) next.mode = patch.mode;
+    if (patch && patch.fit) next.fit = patch.fit;
+    if (patch && patch.selectedId) next.selectedId = String(patch.selectedId);
+    if (patch && Object.prototype.hasOwnProperty.call(patch, 'lastId')) next.lastId = String(patch.lastId || '');
+    return this.saveSettings({ startScreen: next });
+  }
+  backgroundPath(name) {
+    const url = backgroundFileUrl(name);
+    const base = decodeURIComponent(url.slice(url.lastIndexOf('/') + 1));
+    const root = path.resolve(this.bgDir);
+    const full = path.resolve(root, base);
+    if (full !== path.join(root, base)) throw new Error('unsafe media name');
+    return full;
+  }
+  backgroundUrl(name) { return backgroundFileUrl(name); }
 
   // ---------- trade logs ----------
   listLogs() {

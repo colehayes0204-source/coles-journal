@@ -5,8 +5,9 @@ const fs = require('fs'), os = require('os'), path = require('path');
 const { Store, computeStats, computeRuleStreak, computePnlCalendar, normalizeHandles, youtubeId } = require('../src/store');
 const { MentorFeed } = require('../src/mentors');
 const { tradingSessions } = require('../src/sessions');
-const { audioExtension, safeStoredAudioName, themeSongFileUrl } = require('../src/media-path');
-const { shouldDismissEntrance } = require('../src/entrance-gate');
+const { audioExtension, safeStoredAudioName, themeSongFileUrl, safeStoredBackgroundName, backgroundFileUrl, backgroundKind } = require('../src/media-path');
+const { shouldDismissEntrance, shouldReturnToStart } = require('../src/entrance-gate');
+const { normalizeLibrary, pickStartBackground, nextShuffleBackground, fallbackChain, normalizeSpeed } = require('../src/backgrounds');
 
 let passed = 0;
 const test = async (name, fn) => { await fn(); passed++; console.log('  ✓ ' + name); };
@@ -286,6 +287,89 @@ function mockFetch(routes, calls) {
     assert.ok(path.resolve(escaped).startsWith(root + path.sep));
     assert.ok(store.songPath(saved.themeSong.file).startsWith(root));
   });
+  console.log('Start screen library');
+  await test('background paths with spaces, apostrophes, and backslashes become a safe URL', () => {
+    const messy = "C:\\Users\\Cole\\AppData\\Roaming\\Cole's Journal\\Sunset #1.MP4";
+    assert.strictEqual(audioExtension(messy), '.mp4');
+    assert.strictEqual(backgroundKind(messy), 'video');
+    assert.strictEqual(backgroundKind('C:\\Photos\\Dawn.JPEG'), 'image');
+    assert.strictEqual(backgroundKind('/tmp/loop.GIF'), 'image');
+    assert.strictEqual(safeStoredBackgroundName('abc-123', messy), 'abc-123.mp4');
+    assert.strictEqual(backgroundFileUrl('abc-123.mp4'), 'journal-media://bg/abc-123.mp4');
+    assert.ok(!/['\\ #%]/.test(backgroundFileUrl('abc-123.webm')));
+    assert.strictEqual(backgroundFileUrl("..\\..\\Cole's Journal\\secret.png"), 'journal-media://bg/secret.png');
+    assert.throws(() => backgroundFileUrl("Cole's pic.png"), /unsafe/);
+    assert.throws(() => safeStoredBackgroundName('id', 'notes.txt'), /unsupported/);
+  });
+  await test('the library keeps the dock video, persists files, and will not delete the dock', () => {
+    const dir = tmp();
+    const nested = path.join(dir, "Cole's Journal");
+    fs.mkdirSync(nested);
+    const pic = path.join(nested, 'Dawn Photo.PNG');
+    const clip = path.join(nested, 'Loop #2.mp4');
+    fs.writeFileSync(pic, 'png');
+    fs.writeFileSync(clip, 'mp4');
+    const store = new Store(path.join(dir, 'data'));
+    const saved = store.importBackgrounds([pic, clip, path.join(nested, 'missing.png'), path.join(nested, 'notes.txt')]);
+    assert.strictEqual(saved.startScreen.mode, 'random');
+    assert.strictEqual(saved.startScreen.items[0].id, 'default');
+    assert.strictEqual(saved.startScreen.items[0].builtin, true);
+    assert.strictEqual(saved.startScreen.items.length, 3);
+    assert.strictEqual(saved.startScreen.items[1].kind, 'image');
+    assert.strictEqual(saved.startScreen.items[1].name, 'Dawn Photo.PNG');
+    assert.strictEqual(saved.startScreen.items[2].kind, 'video');
+    assert.strictEqual(saved.startScreen.items[2].speed, 0.5);
+    assert.strictEqual(fs.readFileSync(store.backgroundPath(saved.startScreen.items[1].file), 'utf8'), 'png');
+    const again = new Store(store.dir);
+    assert.strictEqual(again.getSettings().startScreen.items.length, 3);
+    assert.strictEqual(again.backgroundUrl(again.getSettings().startScreen.items[2].file), 'journal-media://bg/' + again.getSettings().startScreen.items[2].file);
+    const root = path.resolve(store.bgDir);
+    const escaped = store.backgroundPath("..\\..\\Cole's Journal\\secret.mp4");
+    assert.ok(path.resolve(escaped).startsWith(root + path.sep));
+    const imageId = saved.startScreen.items[1].id;
+    const kept = store.removeBackground('default');
+    assert.ok(kept.startScreen.items.some(i => i.id === 'default'));
+    const removed = store.removeBackground(imageId);
+    assert.ok(!removed.startScreen.items.some(i => i.id === imageId));
+    assert.strictEqual(fs.existsSync(path.join(store.bgDir, saved.startScreen.items[1].file)), false);
+    const slowed = store.updateBackground(saved.startScreen.items[2].id, { speed: 0.25, enabled: false });
+    const video = slowed.startScreen.items.find(i => i.id === saved.startScreen.items[2].id);
+    assert.strictEqual(video.speed, 0.25);
+    assert.strictEqual(video.enabled, false);
+    const picked = store.setStartPrefs({ mode: 'selected', fit: 'fit', selectedId: video.id });
+    assert.strictEqual(picked.startScreen.mode, 'selected');
+    assert.strictEqual(picked.startScreen.fit, 'fit');
+    assert.strictEqual(picked.startScreen.selectedId, video.id);
+    assert.strictEqual(normalizeSpeed(0.3), 0.5);
+    assert.strictEqual(normalizeSpeed(1), 1);
+  });
+  await test('random avoids the previous launch, selected stays put, and a failure tries another then the dock', () => {
+    const items = [
+      { id: 'default', builtin: true, kind: 'video', file: '', name: 'Dock', enabled: true, speed: 0.5 },
+      { id: 'pic', builtin: false, kind: 'image', file: 'pic.png', name: 'pic', enabled: true, speed: 0.5 },
+      { id: 'clip', builtin: false, kind: 'video', file: 'clip.mp4', name: 'clip', enabled: true, speed: 1 },
+    ];
+    const lib = { mode: 'random', fit: 'fill', selectedId: 'default', lastId: '', items };
+    let last = '';
+    const seen = [];
+    for (const n of [0, 0.4, 0.9, 0, 0.4, 0.9]) {
+      const pick = pickStartBackground({ ...lib, lastId: last }, () => n);
+      if (last) assert.notStrictEqual(pick.id, last);
+      seen.push(pick.id);
+      last = pick.id;
+    }
+    assert.ok(new Set(seen).size >= 2);
+    const selected = pickStartBackground({ ...lib, mode: 'selected', selectedId: 'clip', lastId: 'clip' }, () => 0);
+    assert.strictEqual(selected.id, 'clip');
+    const shuffled = nextShuffleBackground(lib, 'clip', () => 0);
+    assert.notStrictEqual(shuffled.id, 'clip');
+    const chain = fallbackChain({ ...lib, items: items.map(i => i.id === 'default' ? { ...i, enabled: false } : i) }, items[2]);
+    assert.deepStrictEqual(chain.map(i => i.id), ['clip', 'pic', 'default']);
+    const normalized = normalizeLibrary({ items: [{ id: 'pic', file: 'pic.png', kind: 'image', name: 'pic' }] });
+    assert.strictEqual(normalized.items[0].id, 'default');
+    assert.strictEqual(normalized.mode, 'random');
+    assert.strictEqual(normalizeLibrary({ items: [{ id: 'nope', file: "Cole's pic.png" }] }).items.length, 1);
+  });
   console.log('Entrance');
   await test('click, pointer, and any key enter once; repeats and a second event do not', () => {
     assert.strictEqual(shouldDismissEntrance({ type: 'click' }, false), true);
@@ -296,6 +380,13 @@ function mockFetch(routes, calls) {
     assert.strictEqual(shouldDismissEntrance({ type: 'keydown', key: ' ', repeat: true }, false), false);
     assert.strictEqual(shouldDismissEntrance({ type: 'click' }, true), false);
     assert.strictEqual(shouldDismissEntrance({ type: 'scroll' }, false), false);
+  });
+  await test('Esc returns to the start screen only when nothing is open, and Ctrl+W always does', () => {
+    assert.strictEqual(shouldReturnToStart({ key: 'Escape', ctrlKey: false, metaKey: false }, false), true);
+    assert.strictEqual(shouldReturnToStart({ key: 'Escape', ctrlKey: false, metaKey: false }, true), false);
+    assert.strictEqual(shouldReturnToStart({ key: 'w', ctrlKey: true, metaKey: false }, true), true);
+    assert.strictEqual(shouldReturnToStart({ key: 'w', ctrlKey: false, metaKey: true }, false), true);
+    assert.strictEqual(shouldReturnToStart({ key: 'a', ctrlKey: false, metaKey: false }, false), false);
   });
   console.log(`\n${passed} tests passed`);
 })().catch(e => { console.error('FAILED:', e); process.exit(1); });

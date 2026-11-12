@@ -9,6 +9,17 @@ function shouldDismissEntrance(ev, alreadyDone) {
   return type === 'click' || type === 'pointerdown' || type === 'mousedown';
 }
 
-const entranceGateApi = { shouldDismissEntrance };
+function shouldReturnToStart(ev, modalOpen) {
+  if (!ev) return false;
+  const key = String(ev.key || '');
+  if ((ev.ctrlKey || ev.metaKey) && key.toLowerCase() === 'w') return true;
+  if (key === 'Escape' || key === 'Esc') return !modalOpen;
+  return false;
+}
+
+const entranceGateApi = { shouldDismissEntrance, shouldReturnToStart };
 if (typeof module !== 'undefined' && module.exports) module.exports = entranceGateApi;
-if (typeof window !== 'undefined') window.shouldDismissEntrance = shouldDismissEntrance;
+if (typeof window !== 'undefined') {
+  window.shouldDismissEntrance = shouldDismissEntrance;
+  window.shouldReturnToStart = shouldReturnToStart;
+}

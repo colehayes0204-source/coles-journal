@@ -6,6 +6,12 @@ contextBridge.exposeInMainWorld('gon', {
   shots: { pick: () => inv('shots:pick'), importFiles: files => inv('shots:import', Array.from(files).map(f => webUtils.getPathForFile(f))), open: n => inv('shots:open', n) },
   settings: { get: () => inv('settings:get'), save: p => inv('settings:save', p) },
   song: { pick: () => inv('song:pick'), clear: () => inv('song:clear') },
+  bg: {
+    add: () => inv('bg:add'),
+    remove: id => inv('bg:remove', id),
+    update: (id, patch) => inv('bg:update', id, patch),
+    prefs: patch => inv('bg:prefs', patch),
+  },
   edu: {
     list: () => inv('edu:list'),
     pick: () => inv('edu:pick'),

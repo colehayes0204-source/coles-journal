@@ -58,12 +58,20 @@ $$('.tab').forEach(b => b.onclick = () => go(b.dataset.tab));
 document.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) go(g.dataset.goto); });
 window.addEventListener('resize', moveInk);
 document.addEventListener('keydown', e => {
-  if (!$('#splash') || $('#splash').hidden) {
-    if (e.key === 'Escape') { if (!$('#lightbox').hidden) $('#lightbox').hidden = true; else if (!$('#eduOverlay').hidden) closeEdu(); else if (!$('#wizOverlay').hidden) closeWizard(); else closeDrawer(); }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); openWizard(); }
-    if ((e.ctrlKey || e.metaKey) && /^[1-6]$/.test(e.key)) go(TABS[+e.key - 1]);
-    if (e.key === 'Enter' && state.tab === 'home' && $('#wizOverlay').hidden && $('#overlay').hidden && document.activeElement === document.body) openWizard();
+  if (splashOpen()) return;
+  const back = typeof shouldReturnToStart === 'function' && shouldReturnToStart(e, modalOpen());
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'w') { e.preventDefault(); returnToStart(); return; }
+  if (e.key === 'Escape') {
+    if (!$('#lightbox').hidden) { $('#lightbox').hidden = true; return; }
+    if (!$('#eduOverlay').hidden) { closeEdu(); return; }
+    if (!$('#wizOverlay').hidden) { closeWizard(); return; }
+    if (!$('#overlay').hidden) { closeDrawer(); return; }
+    if (back) returnToStart();
+    return;
   }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); openWizard(); }
+  if ((e.ctrlKey || e.metaKey) && /^[1-6]$/.test(e.key)) go(TABS[+e.key - 1]);
+  if (e.key === 'Enter' && state.tab === 'home' && $('#wizOverlay').hidden && $('#overlay').hidden && document.activeElement === document.body) openWizard();
 });
 function render() {
   if (state.tab === 'home') renderHome();
@@ -419,6 +427,7 @@ async function renderSettings() {
   applyUpdateState(updateState);
   syncThemeSeg();
   syncSongForm();
+  renderBackgroundLibrary();
 }
 $('#toggleToken').onclick = () => { const t = $('#sToken'); t.type = t.type === 'password' ? 'text' : 'password'; $('#toggleToken').textContent = t.type === 'password' ? 'Show' : 'Hide'; };
 $('#openData').onclick = () => gon.app.openDataDir();
@@ -461,58 +470,228 @@ function setupImages() {
 }
 
 // ---------------- entrance ----------------
+let entranceArmed = false;
+let entranceBound = false;
+let entranceItemId = '';
+let bgToken = 0;
+let shuffleStamp = 0;
+const DEFAULT_ENTRANCE_SRC = 'assets/entrance-loop.mp4';
+
+function splashOpen() {
+  const sp = $('#splash');
+  return !!(sp && !sp.hidden && !sp.classList.contains('out'));
+}
+function modalOpen() {
+  const open = (id) => { const el = $(id); return !!(el && !el.hidden); };
+  return open('#lightbox') || open('#eduOverlay') || open('#wizOverlay') || open('#overlay');
+}
 function enterApp() {
-  if (document.body.classList.contains('entered')) return;
-  document.body.classList.remove('booting'); document.body.classList.add('entered');
+  if (document.body.classList.contains('entered') && !document.body.classList.contains('booting')) return;
+  document.body.classList.remove('booting');
+  document.body.classList.add('entered');
   const video = $('#splashVideo');
   if (video) { try { video.pause(); } catch (e) {} }
   requestAnimationFrame(() => { try { moveInk(); } catch (e) {} });
 }
-function entrance() {
-  if (params.get('nosplash') || (state.settings && state.settings.splash === false)) { enterApp(); return; }
-  const sp = $('#splash');
-  if (!sp) { enterApp(); return; }
-  sp.hidden = false;
-  let done = false;
+function shuffleTarget(ev) {
+  const t = ev && ev.target;
+  return !!(t && t.closest && t.closest('#splashShuffle'));
+}
+function bindEntranceOnce() {
+  if (entranceBound) return;
+  entranceBound = true;
   const finish = (ev) => {
-    if (typeof shouldDismissEntrance === 'function' && !shouldDismissEntrance(ev, done)) return;
-    if (done) return;
-    done = true;
+    if (!splashOpen() || !entranceArmed) return;
+    if (shuffleTarget(ev)) return;
+    if (ev && ev.type === 'keydown' && (ev.ctrlKey || ev.metaKey || ev.altKey)) return;
+    if (typeof shouldDismissEntrance === 'function' && !shouldDismissEntrance(ev, false)) return;
+    entranceArmed = false;
     console.log('[entrance] enter', ev && ev.type);
-    window.removeEventListener('pointerdown', finish, true);
-    window.removeEventListener('mousedown', finish, true);
-    window.removeEventListener('click', finish, true);
-    window.removeEventListener('keydown', finish, true);
-    sp.classList.add('out');
-    enterApp();
-    setTimeout(() => { try { sp.remove(); } catch (e) {} }, 800);
-    setTimeout(() => { try { fadeOutSong(); } catch (e) { console.log('[theme-song]', e); } }, 0);
+    leaveEntrance();
   };
   window.addEventListener('pointerdown', finish, true);
   window.addEventListener('mousedown', finish, true);
   window.addEventListener('click', finish, true);
   window.addEventListener('keydown', finish, true);
+}
+function leaveEntrance() {
+  entranceArmed = false;
+  const sp = $('#splash');
+  if (sp) sp.classList.add('out');
+  enterApp();
+  setTimeout(() => { try { fadeOutSong(); } catch (e) { console.log('[theme-song]', e); } }, 0);
+}
+function pauseAppMedia() {
+  $$('video').forEach(v => { if (v.id !== 'splashVideo') { try { v.pause(); } catch (e) {} } });
+}
+function paintSplashName() {
+  const name = (state.settings && state.settings.profile && state.settings.profile.handle) || 'colehys';
+  const el = $('#splashName');
+  if (!el) return;
+  el.innerHTML = [...name].map((ch, i) => `<span style="animation-delay:${0.35 + i * 0.06}s">${esc(ch)}</span>`).join('');
+  const W = el.offsetWidth;
+  $$('span', el).forEach(span => { span.style.setProperty('--w', W + 'px'); span.style.setProperty('--x', span.offsetLeft - el.offsetLeft + 'px'); });
+}
+function returnToStart() {
+  const sp = $('#splash');
+  if (!sp || splashOpen()) return;
+  // The trade wizard stays open underneath so an unsaved draft is still there on the way back in.
+  sp.hidden = false;
+  sp.classList.add('out');
+  document.body.classList.add('booting');
+  document.body.classList.remove('entered');
+  entranceArmed = true;
+  try { pauseAppMedia(); } catch (e) {}
+  try { paintSplashName(); } catch (e) { console.log('[entrance]', e); }
+  try { showEntranceBackground({ fresh: true }); } catch (e) { console.log('[background]', e); }
+  try { playEntranceSong(); } catch (e) { console.log('[theme-song]', e); }
+  try { paintNow(); } catch (e) { console.log('[clock]', e); }
+  requestAnimationFrame(() => { if (sp) sp.classList.remove('out'); });
+}
+function currentLibrary() {
   try {
-    const name = (state.settings && state.settings.profile && state.settings.profile.handle) || 'colehys';
-    $('#splashName').innerHTML = [...name].map((ch, i) => `<span style="animation-delay:${0.35 + i * 0.06}s">${esc(ch)}</span>`).join('');
-    const h = $('#splashName'), W = h.offsetWidth;
-    $$('span', h).forEach(el => { el.style.setProperty('--w', W + 'px'); el.style.setProperty('--x', el.offsetLeft - h.offsetLeft + 'px'); });
-  } catch (e) { console.log('[entrance]', e); }
+    if (typeof backgroundsApi !== 'undefined') return backgroundsApi.normalizeLibrary(state.settings && state.settings.startScreen);
+  } catch (e) { console.log('[background]', e); }
+  return { mode: 'random', fit: 'fill', selectedId: 'default', lastId: '', items: [{ id: 'default', builtin: true, kind: 'video', file: '', name: 'Dock', enabled: true, speed: 0.5 }] };
+}
+function rememberBackground(id) {
+  const lib = currentLibrary();
+  if (!id || lib.lastId === id) return;
+  lib.lastId = id;
+  if (state.settings) state.settings.startScreen = lib;
+  if (!gon.bg || !gon.bg.prefs) return;
+  gon.bg.prefs({ lastId: id }).then(s => { if (s) state.settings = s; }).catch(e => console.log('[background]', e && e.message ? e.message : e));
+}
+function showEntranceBackground(opts) {
+  const token = ++bgToken;
+  const lib = currentLibrary();
+  let chosen = null;
   try {
-    const video = $('#splashVideo');
-    if (video) {
-      const slow = () => { try { video.playbackRate = 0.5; } catch (e) {} };
-      video.muted = true;
-      video.addEventListener('error', (e) => { e.stopPropagation(); console.log('[entrance] video', video.error && video.error.code); });
-      video.addEventListener('loadedmetadata', slow);
-      video.addEventListener('play', slow);
-      slow();
-      video.play().catch((err) => console.log('[entrance] video play', err && err.name));
-    }
-  } catch (e) { console.log('[entrance]', e); }
+    if (opts && opts.shuffleFrom && typeof backgroundsApi !== 'undefined') chosen = backgroundsApi.nextShuffleBackground(lib, opts.shuffleFrom);
+    else if (typeof backgroundsApi !== 'undefined') chosen = backgroundsApi.pickStartBackground(lib);
+  } catch (e) { console.log('[background]', e); }
+  const chain = (typeof backgroundsApi !== 'undefined') ? backgroundsApi.fallbackChain(lib, chosen) : [chosen].filter(Boolean);
+  applyBackgroundChain(chain.length ? chain : [{ id: 'default', builtin: true, kind: 'video', speed: 0.5 }], 0, token, lib.fit || 'fill');
+}
+function applyBackgroundChain(chain, index, token, fit) {
+  if (token !== bgToken) return;
+  const sp = $('#splash');
+  const item = chain[index];
+  if (!sp || !item) { applyDefaultEntrance(token, fit); return; }
+  sp.classList.toggle('fit-contain', fit === 'fit');
+  const fail = (err) => {
+    console.log('[background]', item.id, err && (err.message || err.code || err.name) || err);
+    if (token !== bgToken) return;
+    if (index + 1 < chain.length) applyBackgroundChain(chain, index + 1, token, fit);
+    else applyDefaultEntrance(token, fit);
+  };
+  if (item.kind === 'image' && !item.builtin) {
+    let url = '';
+    try { url = backgroundFileUrl(item.file); }
+    catch (e) { fail(e); return; }
+    showEntranceImage(url, item, token, fail);
+    return;
+  }
+  let url = DEFAULT_ENTRANCE_SRC;
+  if (!item.builtin && item.file) {
+    try { url = backgroundFileUrl(item.file); }
+    catch (e) { fail(e); return; }
+  }
+  const speed = (typeof backgroundsApi !== 'undefined') ? backgroundsApi.normalizeSpeed(item.speed) : (Number(item.speed) || 0.5);
+  showEntranceVideo(url, speed, item, token, fail);
+}
+function showEntranceImage(url, item, token, fail) {
+  const video = $('#splashVideo');
+  const image = $('#splashImage');
+  if (video) { video.onerror = null; try { video.pause(); } catch (e) {} video.hidden = true; }
+  if (!image) { fail(new Error('no image element')); return; }
+  let failed = false;
+  const once = (err) => { if (failed || token !== bgToken) return; failed = true; fail(err); };
+  image.hidden = false;
+  image.onload = () => {
+    if (token !== bgToken || failed) return;
+    entranceItemId = item.id;
+    rememberBackground(item.id);
+  };
+  image.onerror = () => once(new Error('image failed'));
+  if (image.getAttribute('src') === url && image.complete && image.naturalWidth) {
+    entranceItemId = item.id;
+    rememberBackground(item.id);
+    return;
+  }
+  image.src = url;
+}
+function showEntranceVideo(url, speed, item, token, fail) {
+  const image = $('#splashImage');
+  const video = $('#splashVideo');
+  if (image) { image.onerror = null; image.removeAttribute('src'); image.hidden = true; }
+  if (!video) { fail(new Error('no video')); return; }
+  let failed = false;
+  const once = (err) => { if (failed || token !== bgToken) return; failed = true; video.onerror = null; fail(err); };
+  video.hidden = false;
+  const arm = () => { try { video.playbackRate = speed; video.muted = true; video.loop = true; } catch (e) {} };
+  video.onerror = null;
+  const same = video.getAttribute('src') === url;
+  if (!same) video.src = url;
+  video.onerror = (e) => { if (e && e.stopPropagation) e.stopPropagation(); if (video.getAttribute('src') !== url) return; once(video.error || new Error('video failed')); };
+  video.onloadedmetadata = arm;
+  video.onplay = arm;
+  video.onloadeddata = () => {
+    if (token !== bgToken || failed) return;
+    entranceItemId = item.id;
+    rememberBackground(item.id);
+    arm();
+  };
+  arm();
+  try { video.currentTime = 0; } catch (e) {}
+  const played = video.play();
+  if (played && played.then) played.then(() => { if (token === bgToken && !failed) { entranceItemId = item.id; rememberBackground(item.id); } }).catch((err) => {
+    console.log('[background] play', err && err.name);
+    if (err && err.name !== 'AbortError' && err && err.name !== 'NotAllowedError') once(err);
+  });
+}
+function applyDefaultEntrance(token, fit) {
+  if (token !== bgToken) return;
+  console.log('[background] using dock video');
+  showEntranceVideo(DEFAULT_ENTRANCE_SRC, 0.5, { id: 'default', builtin: true, speed: 0.5 }, token, (err) => {
+    console.log('[background] dock video failed', err && err.message ? err.message : err);
+  });
+  const sp = $('#splash');
+  if (sp) sp.classList.toggle('fit-contain', fit === 'fit');
+}
+function shuffleEntrance() {
+  const now = Date.now();
+  if (now - shuffleStamp < 280) return;
+  shuffleStamp = now;
+  if (!splashOpen()) return;
+  try { showEntranceBackground({ shuffleFrom: entranceItemId || 'default' }); }
+  catch (e) { console.log('[background]', e); }
+}
+function entrance() {
+  bindEntranceOnce();
+  if (params.get('nosplash') || (state.settings && state.settings.splash === false)) { enterApp(); return; }
+  const sp = $('#splash');
+  if (!sp) { enterApp(); return; }
+  sp.hidden = false;
+  sp.classList.remove('out');
+  entranceArmed = true;
+  try { paintSplashName(); } catch (e) { console.log('[entrance]', e); }
+  try { showEntranceBackground({ fresh: true }); } catch (e) { console.log('[background]', e); }
   try { playEntranceSong(); } catch (e) { console.log('[theme-song]', e); }
   try { paintNow(); } catch (e) { console.log('[clock]', e); }
 }
+$('#closeJournal').onclick = () => returnToStart();
+$('#splashShuffle').addEventListener('pointerdown', (ev) => {
+  ev.preventDefault();
+  ev.stopPropagation();
+  shuffleEntrance();
+}, true);
+$('#splashShuffle').addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Enter' && ev.key !== ' ') return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  shuffleEntrance();
+});
 
 function paintNow() {
   try { paintClock(); } catch (err) { console.log('[clock]', err && err.message ? err.message : err); }
@@ -528,7 +707,7 @@ function paintClock() {
     pill.classList.toggle('closed', status.closed || !names.length);
   }
   const sp = $('#splash');
-  if (!sp || sp.hidden) return;
+  if (!sp || sp.hidden || sp.classList.contains('out')) return;
   const parts = {};
   for (const p of new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).formatToParts(now)) {
     if (p.type !== 'literal') parts[p.type] = p.value;
@@ -571,6 +750,27 @@ $$('#themeSeg button').forEach(b => b.onclick = () => setTheme(b.dataset.theme))
 
 // ---------------- theme song ----------------
 let songHandle = null;
+let retiringSong = null;
+let songRetireTimer = null;
+function songBin() {
+  let bin = $('#songBin');
+  if (!bin) {
+    bin = document.createElement('div');
+    bin.id = 'songBin';
+    bin.hidden = true;
+    document.body.appendChild(bin);
+  }
+  return bin;
+}
+function releaseSong(h) {
+  if (!h) return;
+  try { h.stop(); } catch (e) {}
+}
+function claimSongSlot() {
+  if (songRetireTimer) { clearTimeout(songRetireTimer); songRetireTimer = null; }
+  if (retiringSong) { releaseSong(retiringSong); retiringSong = null; }
+  if (songHandle) { releaseSong(songHandle); songHandle = null; }
+}
 function songVolume() {
   const v = Number(state.settings?.themeSong?.volume);
   return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.7;
@@ -618,12 +818,14 @@ function playFile(file, vol, loop) {
   let url;
   try { url = themeSongFileUrl(file); }
   catch (err) { reportSongError(err); return null; }
-  const audio = new Audio(url);
+  const audio = new Audio();
   audio.preload = 'auto';
   audio.loop = !!loop;
   audio.volume = 0;
+  audio.src = url;
+  songBin().appendChild(audio);
   audio.addEventListener('error', () => reportSongError(audio.error || new Error('audio failed to load')));
-  const handle = { kind: 'file', audio, stop() { audio.pause(); audio.removeAttribute('src'); audio.load(); } };
+  const handle = { kind: 'file', audio, stop() { try { audio.pause(); } catch (e) {} audio.removeAttribute('src'); try { audio.load(); } catch (e) {} audio.remove(); } };
   const begin = () => audio.play().then(() => fadeAudio(audio, vol, 700));
   begin().catch((err) => {
     console.log('[theme-song]', err && err.name, err && err.message);
@@ -640,7 +842,7 @@ function activeSongFile() {
 }
 function startSong(loop) {
   try {
-    stopSong(true);
+    claimSongSlot();
     songRetry = null;
     const s = state.settings.themeSong || {};
     if (s.enabled === false) return null;
@@ -675,7 +877,13 @@ function stopSong(immediate) {
 function fadeOutSong() {
   const h = songHandle; songHandle = null;
   if (!h) return;
-  setTimeout(() => { try { h.stop(); } catch (e) {} }, 900);
+  if (retiringSong && retiringSong !== h) releaseSong(retiringSong);
+  retiringSong = h;
+  if (songRetireTimer) clearTimeout(songRetireTimer);
+  songRetireTimer = setTimeout(() => {
+    songRetireTimer = null;
+    if (retiringSong === h) { releaseSong(h); retiringSong = null; }
+  }, 900);
   try {
     if (h.kind === 'chime' && h.master && h.ctx) {
       const g = h.master.gain, from = g.value, t = h.ctx.currentTime;
@@ -724,6 +932,71 @@ $('#previewSong').onclick = () => {
   $('#previewSong').textContent = 'Stop';
   setTimeout(() => { if ($('#previewSong').textContent === 'Stop') { stopSong(true); $('#previewSong').textContent = 'Play'; } }, 8000);
 };
+
+function renderBackgroundLibrary() {
+  const grid = $('#bgGrid');
+  if (!grid) return;
+  const lib = currentLibrary();
+  $$('#bgMode button').forEach(b => b.classList.toggle('on', b.dataset.mode === lib.mode));
+  $$('#bgFit button').forEach(b => b.classList.toggle('on', b.dataset.fit === lib.fit));
+  const speeds = (typeof backgroundsApi !== 'undefined' && backgroundsApi.BG_SPEEDS) || [0.25, 0.5, 0.75, 1];
+  const thumb = (item) => {
+    if (item.kind === 'image' && item.file) {
+      let url = '';
+      try { url = backgroundFileUrl(item.file); } catch (e) { url = ''; }
+      return `<img src="${esc(url)}" alt="">`;
+    }
+    let src = 'assets/entrance-loop.mp4#t=0.4';
+    if (!item.builtin && item.file) { try { src = backgroundFileUrl(item.file) + '#t=0.1'; } catch (e) { src = ''; } }
+    return `<video muted preload="metadata" playsinline src="${esc(src)}"></video>`;
+  };
+  grid.innerHTML = lib.items.map(item => {
+    const speed = item.kind === 'video'
+      ? `<label class="bg-speed">Speed<select data-speed>${speeds.map(s => `<option value="${s}"${Number(s) === Number(item.speed) ? ' selected' : ''}>${s}x</option>`).join('')}</select></label>`
+      : '';
+    const remove = item.builtin ? '<span class="muted small">Built in</span>' : '<button type="button" class="icon" data-rm title="Remove">✕</button>';
+    return `<article class="bg-tile${item.id === lib.selectedId ? ' on' : ''}" data-id="${esc(item.id)}">
+      <button type="button" class="bg-thumb" data-pick>${thumb(item)}<span class="bg-badge">${item.kind === 'video' ? 'Video' : 'Image'}</span></button>
+      <div class="bg-meta">
+        <div class="bg-meta-row"><div class="ellipsis" title="${esc(item.name)}">${esc(item.name)}</div>${remove}</div>
+        <label class="check"><input type="checkbox" data-on ${item.enabled ? 'checked' : ''}> In rotation</label>
+        ${speed}
+      </div>
+    </article>`;
+  }).join('');
+  $$('#bgGrid video').forEach(v => v.addEventListener('loadeddata', () => { try { if (v.currentTime < 0.05) v.currentTime = Math.min(0.4, (v.duration || 1) / 5); } catch (e) {} }, { once: true }));
+}
+async function applyBackgroundSettings(next) {
+  if (!next) return;
+  state.settings = next;
+  renderBackgroundLibrary();
+}
+$('#addBackgrounds').onclick = async () => {
+  try {
+    const saved = await gon.bg.add();
+    if (!saved) return;
+    await applyBackgroundSettings(saved);
+    toast('Backgrounds added');
+  } catch (err) { console.log('[background]', err); toast('Could not add that file'); }
+};
+$('#bgGrid').addEventListener('click', async (e) => {
+  const tile = e.target.closest('.bg-tile');
+  if (!tile) return;
+  try {
+    if (e.target.closest('[data-rm]')) { e.preventDefault(); await applyBackgroundSettings(await gon.bg.remove(tile.dataset.id)); return; }
+    if (e.target.closest('[data-pick]')) await applyBackgroundSettings(await gon.bg.prefs({ selectedId: tile.dataset.id }));
+  } catch (err) { console.log('[background]', err); }
+});
+$('#bgGrid').addEventListener('change', async (e) => {
+  const tile = e.target.closest('.bg-tile');
+  if (!tile) return;
+  try {
+    if (e.target.matches('[data-on]')) await applyBackgroundSettings(await gon.bg.update(tile.dataset.id, { enabled: e.target.checked }));
+    if (e.target.matches('[data-speed]')) await applyBackgroundSettings(await gon.bg.update(tile.dataset.id, { speed: Number(e.target.value) }));
+  } catch (err) { console.log('[background]', err); }
+});
+$$('#bgMode button').forEach(b => b.onclick = async () => { try { await applyBackgroundSettings(await gon.bg.prefs({ mode: b.dataset.mode })); } catch (err) { console.log('[background]', err); } });
+$$('#bgFit button').forEach(b => b.onclick = async () => { try { await applyBackgroundSettings(await gon.bg.prefs({ fit: b.dataset.fit })); } catch (err) { console.log('[background]', err); } });
 
 // ---------------- P&L calendar ----------------
 function renderPnl() {

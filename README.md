@@ -1,6 +1,10 @@
-# Cole's Journal (v1.2.4)
+# Cole's Journal (v1.2.5)
 
 A clean, minimal, light sky-themed desktop trading journal for colehys. It uses monospace for numbers, with a sky-blue accent, Gon green for wins and orange-red for losses.
+
+## What's new in 1.2.5
+- **Start screen library**: add images and videos in Settings. Random picks a different one each time the start screen opens, or pin one tile. Each video has its own speed. The dock video stays in the library.
+- **Close journal** in the top bar (also Esc, and Ctrl/Cmd+W) fades back to the start screen without quitting. An unsaved trade draft is still there when you enter again.
 
 ## What's new in 1.2.4
 - The dock entrance shows again on every launch and stays until you click or press a key.
@@ -38,7 +42,7 @@ A clean, minimal, light sky-themed desktop trading journal for colehys. It uses 
 - **P&L**: a month calendar of net dollars (R underneath), colored by how big the day was, with a weekly total column. Click a day for that day's trades.
 - **Education**: videos grouped by mentor. A local file plays in the app. A YouTube link embeds. Any other https link opens outside. Each one can have tags, notes, timestamps, and a watched mark.
 - **Mentors**: image posts from the X handles you list, newest first, each with its date and caption. Checked every 15 min (configurable). Images are cached locally.
-- **Settings**: profile, mentor handles, poll interval, X API bearer token, splash on/off, light/dark/system theme, theme song, open data folder, current version, and check for updates.
+- **Settings**: profile, mentor handles, poll interval, X API bearer token, start-screen library, splash on/off, light/dark/system theme, theme song, open data folder, current version, and check for updates.
 
 Shortcuts: `Ctrl/Cmd+N` new log, `Ctrl/Cmd+1..6` switch tabs, `Esc` close.
 
@@ -47,16 +51,16 @@ Uses only the official X API v2: `GET /2/users/by/username/:handle`, then `GET /
 You need your own **Bearer Token** from the X Developer Console (console.x.com). As of late 2026, X has no free read tier. Reads are prepaid pay-per-use: about **$0.005 per post returned** and **$0.010 per user lookup**, and repeat reads of the same post within a UTC day are free. To keep costs low, the app looks up each handle once (cached), pulls 20 posts the first time, and after that asks only for posts newer than the last one it has (`since_id`). Rate limits (429) back off until `x-rate-limit-reset`. 401, 402, and 403 errors appear in plain English on the Mentors tab.
 
 ## Data location
-`settings.json`, `logs.json`, `education.json`, `mentor-cache.json`, `screenshots/`, `videos/`, `thumbs/`, `theme/`, and `mentor-media/` live in the OS app-data folder:
+`settings.json`, `logs.json`, `education.json`, `mentor-cache.json`, `screenshots/`, `videos/`, `thumbs/`, `theme/`, `backgrounds/`, and `mentor-media/` live in the OS app-data folder:
 - Windows: `%APPDATA%\Cole's Journal`
 - macOS: `~/Library/Application Support/Cole's Journal`
 - Linux: `~/.config/Cole's Journal`
 The installer and later updates use this same folder and do not delete it. To back up, copy that folder.
 
 ## Install / run
-- **Windows**: run `ColesJournal-Setup-1.2.4.exe`. It installs for the current user (no admin) and adds a desktop shortcut and a Start menu shortcut named Cole's Journal. The app is unsigned, so SmartScreen will show "Windows protected your PC". Click **More info → Run anyway**. After that, updates download in the background; click **Restart** on the Update ready pill to install them.
-- **macOS**: unzip `ColesJournal-1.2.4-mac-arm64.zip` (Apple Silicon) or `-mac-x64.zip` (Intel) and drag **Cole's Journal.app** to Applications. The app is unsigned and not notarized, so Gatekeeper blocks the first launch. Right-click the app, choose **Open**, then **Open** again, or go to System Settings → Privacy & Security → **Open Anyway**. If macOS says the app "is damaged", run `xattr -cr "/Applications/Cole's Journal.app"`.
-- **Linux**: `chmod +x ColesJournal-1.2.4-linux-x86_64.AppImage && ./ColesJournal-1.2.4-linux-x86_64.AppImage` (needs FUSE; otherwise add `--appimage-extract-and-run`).
+- **Windows**: run `ColesJournal-Setup-1.2.5.exe`. It installs for the current user (no admin) and adds a desktop shortcut and a Start menu shortcut named Cole's Journal. The app is unsigned, so SmartScreen will show "Windows protected your PC". Click **More info → Run anyway**. After that, updates download in the background; click **Restart** on the Update ready pill to install them.
+- **macOS**: unzip `ColesJournal-1.2.5-mac-arm64.zip` (Apple Silicon) or `-mac-x64.zip` (Intel) and drag **Cole's Journal.app** to Applications. The app is unsigned and not notarized, so Gatekeeper blocks the first launch. Right-click the app, choose **Open**, then **Open** again, or go to System Settings → Privacy & Security → **Open Anyway**. If macOS says the app "is damaged", run `xattr -cr "/Applications/Cole's Journal.app"`.
+- **Linux**: `chmod +x ColesJournal-1.2.5-linux-x86_64.AppImage && ./ColesJournal-1.2.5-linux-x86_64.AppImage` (needs FUSE; otherwise add `--appimage-extract-and-run`).
 - **From source (any OS)**: install Node 18+, then `npm install && npm start`.
 
 ## Develop / build

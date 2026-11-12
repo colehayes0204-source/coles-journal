@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' gon: data:; media-src 'self' gon: journal-media: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' gon: journal-media: data:; media-src 'self' gon: journal-media: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com">
 <title>Cole's Journal</title>
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -10,6 +10,7 @@
 <!-- ============ ENTRANCE ============ -->
 <div id="splash" class="splash" hidden>
   <video id="splashVideo" class="splash-video" src="assets/entrance-loop.mp4" muted autoplay loop playsinline preload="auto"></video>
+  <img id="splashImage" class="splash-image" alt="" hidden>
   <div class="splash-shade" aria-hidden="true"></div>
   <div class="splash-panel">
     <div class="splash-time"><span id="splashHm">–:––</span><span id="splashSec" class="sec">––</span><span id="splashAm" class="ampm"></span></div>
@@ -25,6 +26,9 @@
     <div class="splash-sub">Cole's Journal</div>
     <div class="splash-hint">click anywhere to enter</div>
   </div>
+  <button type="button" id="splashShuffle" class="splash-shuffle" title="Another background" aria-label="Another background">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11.2M16 4l3 3-3 3M20 17H8.8M8 14l-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
 </div>
 
 <!-- ============ APP SHELL ============ -->
@@ -42,6 +46,10 @@
     </nav>
     <div class="top-right">
       <div class="session-pill" id="topSession" title="Sessions follow New York time">…</div>
+      <button type="button" id="closeJournal" class="btn sm close-journal" title="Back to start screen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.2c-2.1-1.3-4.5-1.9-7-1.9v12.4c2.5.1 4.9.8 7 2.2 2.1-1.4 4.5-2.1 7-2.2V4.3c-2.5 0-4.9.6-7 1.9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 6.2v12.7" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        Close journal
+      </button>
       <button class="theme-btn" id="themeToggle" type="button" title="Switch light and dark">
         <svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5 5l1.6 1.6M17.4 17.4 19 19M19 5l-1.6 1.6M6.6 17.4 5 19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         <svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.2A8.2 8.2 0 1 0 20.8 14 6.4 6.4 0 0 1 15.5 3.2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
@@ -180,6 +188,17 @@
     <section class="view" id="view-settings">
       <div class="view-head"><div><h2>Settings</h2><div class="muted small">Everything is stored locally on this computer</div></div></div>
       <div class="settings">
+        <div class="card bg-library">
+          <h3>Start screen background</h3>
+          <p class="muted small">A library for the entrance. Random picks a different one each time the start screen opens, including when you close the journal. The dock video stays in the library. It can be turned off, not removed. If a file is missing, the next one is used, then the dock video.</p>
+          <div class="row gap wrap bg-tools">
+            <div class="seg" id="bgMode"><button type="button" data-mode="random">Random each launch</button><button type="button" data-mode="selected">Always use selected</button></div>
+            <div class="seg" id="bgFit"><button type="button" data-fit="fill">Fill</button><button type="button" data-fit="fit">Fit</button></div>
+            <button class="btn" id="addBackgrounds" type="button">Add files…</button>
+          </div>
+          <p class="muted small">Images: png, jpg, webp, gif. Video: mp4, webm, mov. Click a tile to select it. Changes here save immediately.</p>
+          <div class="bg-grid" id="bgGrid"></div>
+        </div>
         <div class="card">
           <h3>Hunter License</h3>
           <label>Name<input id="sName"></label>
@@ -225,7 +244,7 @@
         <div class="card">
           <h3>App</h3>
           <label class="check"><input type="checkbox" id="sSplash"> Show the entrance screen on launch</label>
-          <p class="muted small">The dock entrance plays when you open the app and waits until you click or press a key. Uncheck this to go straight to Home.</p>
+          <p class="muted small">The start screen plays when you open the app and waits until you click or press a key. Uncheck this to go straight to Home. Close journal still returns to the start screen.</p>
           <div class="row gap"><button class="btn" id="openData" type="button">Open data folder</button><span class="mono small muted ellipsis" id="dataDir"></span></div>
         </div>
         <div class="card">
@@ -335,6 +354,7 @@
 </div>
 <script src="../entrance-gate.js"></script>
 <script src="../media-path.js"></script>
+<script src="../backgrounds.js"></script>
 <script src="../sessions.js"></script>
 <script src="app.js"></script>
 </body>

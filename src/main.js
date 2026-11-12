@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, Menu } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -107,6 +107,25 @@ function checkForUpdates() {
   });
 }
 
+function installAppMenu() {
+  // The stock menu binds Ctrl/Cmd+W to close the window. That shortcut returns
+  // to the start screen instead, so it is not a quit accelerator. The window X
+  // button still closes the app.
+  const template = [
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+      ],
+    },
+  ];
+  if (process.platform === 'darwin') {
+    template.unshift({ label: app.name, submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit' }] });
+  }
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1000, minHeight: 660,
@@ -169,7 +188,7 @@ app.whenReady().then(() => {
     const file = path.join(base, path.basename(decodeURIComponent(u.pathname)));
     return net.fetch(fileUrl(file), { headers: rangeHeader(req) });
   });
-  protocol.handle('journal-media', (req) => serveThemeSong(req));
+  protocol.handle('journal-media', (req) => serveJournalMedia(req));
 
   ipcMain.handle('logs:list', () => store.listLogs());
   ipcMain.handle('logs:create', (_e, d) => store.createLog(d));
@@ -205,6 +224,18 @@ app.whenReady().then(() => {
     return store.importThemeSong(r.filePaths[0]);
   });
   ipcMain.handle('song:clear', () => store.clearThemeSong());
+  ipcMain.handle('bg:add', async () => {
+    const r = await dialog.showOpenDialog(win, {
+      title: 'Add start screen backgrounds',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Images and video', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov'] }],
+    });
+    if (r.canceled || !r.filePaths.length) return null;
+    return store.importBackgrounds(r.filePaths);
+  });
+  ipcMain.handle('bg:remove', (_e, id) => store.removeBackground(id));
+  ipcMain.handle('bg:update', (_e, id, patch) => store.updateBackground(id, patch || {}));
+  ipcMain.handle('bg:prefs', (_e, patch) => store.setStartPrefs(patch || {}));
   ipcMain.handle('edu:list', () => store.listEducation());
   ipcMain.handle('edu:pick', async () => {
     const r = await dialog.showOpenDialog(win, { title: 'Choose a video', properties: ['openFile'], filters: [{ name: 'Video', extensions: ['mp4', 'webm', 'ogg', 'mov', 'm4v', 'mkv'] }] });
@@ -228,6 +259,7 @@ app.whenReady().then(() => {
     return store.updateEducation(id, { thumb });
   });
 
+  installAppMenu();
   createWindow();
   setupAutoUpdater();
   schedulePoll();
@@ -235,7 +267,11 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
-const AUDIO_MIME = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg' };
+const MEDIA_MIME = {
+  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+};
 
 function fileUrl(filePath) {
   // pathToFileURL leaves apostrophes raw. Chromium then refuses file URLs under
@@ -246,19 +282,30 @@ function rangeHeader(req) {
   const range = req.headers && req.headers.get && req.headers.get('range');
   return range ? { Range: range } : {};
 }
-function serveThemeSong(req) {
+function serveJournalMedia(req) {
+  let host = '';
+  let name = '';
+  try {
+    const url = new URL(req.url);
+    host = url.hostname;
+    name = url.pathname;
+  } catch (e) {
+    return new Response('not found', { status: 404 });
+  }
+  const background = host === 'bg';
+  const label = background ? '[background]' : '[theme-song]';
   let file;
-  try { file = store.songPath(new URL(req.url).pathname); }
-  catch (e) { console.log('[theme-song]', e && e.message ? e.message : e); return new Response('not found', { status: 404 }); }
+  try { file = background ? store.backgroundPath(name) : store.songPath(name); }
+  catch (e) { console.log(label, e && e.message ? e.message : e); return new Response('not found', { status: 404 }); }
   if (!fs.existsSync(file)) return new Response('not found', { status: 404 });
-  const type = AUDIO_MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
+  const type = MEDIA_MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
   return net.fetch(fileUrl(file), { headers: rangeHeader(req) }).then((res) => {
     const headers = new Headers(res.headers);
     headers.set('content-type', type);
     headers.set('accept-ranges', 'bytes');
     return new Response(res.body, { status: res.status, headers });
   }).catch((e) => {
-    console.log('[theme-song]', e && e.message ? e.message : e);
+    console.log(label, e && e.message ? e.message : e);
     return new Response('not found', { status: 404 });
   });
 }
