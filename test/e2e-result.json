@@ -1,0 +1,20 @@
+{
+  "greeting": true,
+  "wizardOpen": true,
+  "blocksWithoutDirection": true,
+  "plannedRR": true,
+  "rulesRequired": true,
+  "verdictKept": true,
+  "reviewShown": true,
+  "created": true,
+  "streakGrew": true,
+  "editedWithBrokenRule": true,
+  "streakReset": true,
+  "filterWorks": true,
+  "deleted": true,
+  "streakRestored": true,
+  "calendarRuleMarks": true,
+  "mentorFeedCards": 4,
+  "noPromptText": true,
+  "allPassed": true
+}

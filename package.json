@@ -1,0 +1,92 @@
+{
+  "name": "coles-journal",
+  "productName": "Cole's Journal",
+  "version": "1.0.3",
+  "description": "Cole's Journal: a clean, sky-themed trading journal",
+  "author": "Cole",
+  "license": "UNLICENSED",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/run-tests.js",
+    "dist:linux": "electron-builder --linux AppImage",
+    "dist:win": "electron-builder --win portable nsis",
+    "dist:mac": "electron-builder --mac zip"
+  },
+  "devDependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "pe-library": "^2.0.1",
+    "resedit": "^2.0.3"
+  },
+  "build": {
+    "appId": "com.cole.colesjournal",
+    "productName": "Cole's Journal",
+    "copyright": "Personal use",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!src/**/*.map"
+    ],
+    "asar": true,
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icons",
+      "category": "Finance",
+      "artifactName": "ColesJournal-${version}-linux-${arch}.${ext}",
+      "executableName": "coles-journal"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "executableName": "ColesJournal"
+    },
+    "portable": {
+      "artifactName": "ColesJournal-${version}-win-portable.exe"
+    },
+    "nsis": {
+      "artifactName": "ColesJournal-Setup-${version}.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.icns",
+      "identity": null,
+      "category": "public.app-category.finance",
+      "artifactName": "ColesJournal-${version}-mac-${arch}.${ext}"
+    }
+  }
+}

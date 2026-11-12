@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' gon: data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'">
+<title>Cole's Journal</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="booting">
+<!-- ============ ENTRANCE ============ -->
+<div id="splash" class="splash" hidden>
+  <div class="splash-media"><img id="splashGif" alt="" src="assets/gon-rod-hd.webp"></div>
+  <div class="splash-shade" aria-hidden="true"></div>
+  <div class="splash-inner">
+    <h1 class="splash-name" id="splashName" aria-label="colehys"></h1>
+    <div class="splash-sub">Cole's Journal</div>
+  </div>
+  <div class="splash-skip mono">click or press any key to enter</div>
+</div>
+
+<!-- ============ APP SHELL ============ -->
+<div class="app" id="app">
+  <header class="topbar">
+    <div class="brand"><img class="brand-av" src="assets/gon-portrait.jpg" alt=""><span class="brand-name">Cole's Journal</span></div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="home" class="tab active">Home</button>
+      <button data-tab="logs" class="tab">Training Logs</button>
+      <button data-tab="mentors" class="tab">Mentors</button>
+      <button data-tab="settings" class="tab">Settings</button>
+      <span class="tab-ink" id="tabInk"></span>
+    </nav>
+    <div class="top-right">
+      <button class="btn primary sm" id="quickLog" title="Log a trade (Ctrl+N)">+ Log trade</button>
+      <div class="clock mono" id="clock"></div>
+    </div>
+  </header>
+
+  <main id="views">
+    <!-- HOME -->
+    <section class="view active" id="view-home">
+      <div class="clouds" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="banner" id="banner"></div>
+      <div class="hero rise" style="--i:0">
+        <div class="avatar-ring"><img id="avatar" alt="Gon" src="assets/gon-portrait.jpg"></div>
+        <div class="hero-text">
+          <div class="eyebrow mono" id="todayStr"></div>
+          <h1 class="greet" id="greeting"></h1>
+          <p class="muted" id="subGreeting"></p>
+        </div>
+        <div class="license card" id="license">
+          <div class="eyebrow">Hunter License</div>
+          <div class="license-name" id="licName">Cole</div>
+          <div class="mono small accent" id="licHandle">@colehys</div>
+          <div class="muted small" id="licAcct"></div>
+        </div>
+      </div>
+
+      <div class="home-grid">
+        <button class="card ask rise" style="--i:1" id="askLog">
+          <div class="ask-glow"></div>
+          <div class="eyebrow">New entry</div>
+          <div class="ask-q">Log a trade?</div>
+          <div class="muted ask-sub">Step-by-step: what you traded, your levels, the result, and whether you kept your rules.</div>
+          <div class="ask-cta"><span class="btn primary">Yes, let's log it →</span><span class="kbd mono">Enter</span></div>
+        </button>
+        <div class="card streak rise" style="--i:2" id="streakCard">
+          <div class="streak-top">
+            <div class="flame" id="flame" aria-hidden="true">
+              <svg viewBox="0 0 64 80"><defs>
+                <linearGradient id="fg1" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff7a2f"/><stop offset=".6" stop-color="#ffb23f"/><stop offset="1" stop-color="#ffd76a"/></linearGradient>
+                <linearGradient id="fg2" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#fff7dc"/></linearGradient></defs>
+                <path class="f-outer" d="M32 4c4 14 20 22 20 44a20 20 0 0 1-40 0c0-10 5-17 10-22 0 8 4 12 8 12-2-12 0-24 2-34z" fill="url(#fg1)"/>
+                <path class="f-inner" d="M32 40c3 7 10 10 10 20a10 10 0 0 1-20 0c0-6 4-9 6-12 0 4 2 6 4 6-1-5-1-9 0-14z" fill="url(#fg2)"/>
+              </svg>
+            </div>
+            <div>
+              <div class="eyebrow">Rule streak</div>
+              <div class="streak-num"><span class="mono" id="streakNow">0</span><span class="streak-unit">days</span></div>
+              <div class="small muted" id="streakBest">Best: 0 days</div>
+            </div>
+          </div>
+          <div class="streak-dots" id="streakDots"></div>
+          <div class="small muted" id="streakNote"></div>
+        </div>
+      </div>
+
+      <div class="stats" id="stats"></div>
+      <div class="grid2">
+        <div class="card rise" style="--i:8">
+          <div class="card-head"><h3>Equity curve <span class="muted small">cumulative R</span></h3></div>
+          <div id="curve" class="curve"></div>
+        </div>
+        <div class="card rise" style="--i:9">
+          <div class="card-head"><h3>Recent entries</h3><button class="link" data-goto="logs">View all →</button></div>
+          <div id="recent"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOGS -->
+    <section class="view" id="view-logs">
+      <div class="view-head">
+        <div><h2>Training Logs</h2><div class="muted small">Nen Training · every rep counts</div></div>
+        <div class="row gap">
+          <div class="seg" id="logMode"><button data-mode="list" class="on">List</button><button data-mode="calendar">Calendar</button></div>
+          <button class="btn primary" id="newLog">+ Log a trade</button>
+        </div>
+      </div>
+      <div class="filters" id="filters">
+        <input id="fSearch" placeholder="Search notes, setup, mindset…">
+        <select id="fInst"><option value="">All instruments</option></select>
+        <select id="fDir"><option value="">Long &amp; short</option><option value="long">Long</option><option value="short">Short</option></select>
+        <select id="fRes"><option value="">All results</option><option value="win">Wins</option><option value="loss">Losses</option><option value="be">Breakeven</option><option value="kept">Rules kept</option><option value="broken">Rules broken</option></select>
+        <input type="date" id="fFrom" title="From"><input type="date" id="fTo" title="To">
+        <button class="link" id="fClear">Clear</button>
+      </div>
+      <div class="muted small mono" id="filterSummary"></div>
+      <div id="logList"></div>
+      <div id="logCal" hidden></div>
+    </section>
+
+    <!-- MENTORS -->
+    <section class="view" id="view-mentors">
+      <div class="view-head">
+        <div><h2>Mentors</h2><div class="muted small">Image posts from the traders you follow, newest first</div></div>
+        <div class="row gap"><span class="muted small mono" id="mentorStatus"></span><button class="btn" id="refreshMentors">Refresh now</button></div>
+      </div>
+      <div class="chips" id="mentorChips"></div>
+      <div id="mentorErrors"></div>
+      <div class="feed" id="feed"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="view-settings">
+      <div class="view-head"><div><h2>Settings</h2><div class="muted small">Everything is stored locally on this computer</div></div></div>
+      <div class="settings">
+        <div class="card">
+          <h3>Hunter License</h3>
+          <label>Name<input id="sName"></label>
+          <label>Handle<input id="sHandle" placeholder="colehys"></label>
+          <label>Account<input id="sAcct" placeholder="e.g. Tradovate $1,000"></label>
+        </div>
+        <div class="card">
+          <h3>My rules</h3>
+          <p class="muted small">The wizard checks these on every trade. A day counts toward your rule streak only if every trade kept every rule.</p>
+          <div id="rulesEditor" class="rules-editor"></div>
+          <button class="btn sm" id="addRule">+ Add rule</button>
+        </div>
+        <div class="card">
+          <h3>Mentors</h3>
+          <p class="muted small">X handles, one per line or comma separated. Only posts with images are shown.</p>
+          <textarea id="sMentors" rows="4" placeholder="@mentor_handle&#10;@another_trader"></textarea>
+          <label>Check for new posts every<div class="row gap"><input id="sPoll" type="number" min="1" max="1440" class="w-sm"><span class="muted">minutes</span></div></label>
+        </div>
+        <div class="card">
+          <h3>X API bearer token</h3>
+          <p class="muted small">Required for the Mentors tab. Create an app in the X Developer Console and copy its <b>Bearer Token</b>. Reading posts is pay-per-use (about $0.005 per post returned and $0.01 per handle lookup at the time of writing). After the first pull, the app asks only for new posts to keep costs low.</p>
+          <div class="row gap"><input id="sToken" type="password" placeholder="AAAAAAAAAAAAAAAAAAAAA…" autocomplete="off" spellcheck="false"><button class="btn" id="toggleToken">Show</button></div>
+          <p class="muted small">Stored only in this computer's app-data folder. It is sent only to api.x.com.</p>
+        </div>
+        <div class="card">
+          <h3>App</h3>
+          <label class="check"><input type="checkbox" id="sSplash"> Show the entrance screen on launch</label>
+          <div class="row gap"><button class="btn" id="openData">Open data folder</button><span class="mono small muted ellipsis" id="dataDir"></span></div>
+        </div>
+        <div class="row gap save-row"><button class="btn primary" id="saveSettings">Save settings</button><span class="small muted" id="saveMsg"></span></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============ GUIDED WIZARD ============ -->
+<div class="wiz-overlay" id="wizOverlay" hidden>
+  <div class="wiz card" id="wiz" role="dialog" aria-modal="true">
+    <div class="wiz-top">
+      <div class="wiz-label"><b>Log a trade</b><span class="dot-sep">·</span><span id="wizStepLbl">Step 1 of 8</span></div>
+      <button class="icon" id="wizClose" title="Close (Esc)">✕</button>
+    </div>
+    <div class="wiz-progress"><span id="wizBar"></span></div>
+    <div class="wiz-stage" id="wizStage"></div>
+    <div class="wiz-foot">
+      <button class="btn ghost" id="wizBack">← Back</button>
+      <span class="grow"></span>
+      <span class="kbd mono hint">Enter ↵</span>
+      <button class="btn primary" id="wizNext">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ EDIT DRAWER (existing logs) ============ -->
+<div class="overlay" id="overlay" hidden></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <form id="logForm" autocomplete="off">
+    <div class="drawer-head"><h3 id="formTitle">Edit log</h3><button type="button" class="icon" id="closeDrawer">✕</button></div>
+    <div class="fgrid">
+      <label>Date<input type="date" name="date" required></label>
+      <label>Time<input type="time" name="time"></label>
+      <label>Instrument<input name="instrument" list="instList" required placeholder="MNQ"></label>
+      <label>Direction<div class="seg full" id="dirSeg"><button type="button" data-v="long" class="on">Long</button><button type="button" data-v="short">Short</button></div></label>
+      <label>Entry<input name="entry" inputmode="decimal" class="mono"></label>
+      <label>Stop<input name="stop" inputmode="decimal" class="mono"></label>
+      <label>Target<input name="target" inputmode="decimal" class="mono"></label>
+      <label>Setup<input name="setup" placeholder="10am H6 sweep + CISD"></label>
+      <label>Result (R)<input name="resultR" inputmode="decimal" class="mono" placeholder="e.g. 2 or -1"></label>
+      <label>P&amp;L ($)<input name="pnl" inputmode="decimal" class="mono" placeholder="e.g. 150 or -75"></label>
+    </div>
+    <div class="muted small mono" id="plannedRR"></div>
+    <label>Setup notes<textarea name="notes" rows="4"></textarea></label>
+    <label>Emotions / mindset<textarea name="mindset" rows="3"></textarea></label>
+    <div class="label">Rules</div>
+    <div class="rule-list compact" id="drawerRules"></div>
+    <div class="shots">
+      <div class="row between"><span class="label">Screenshots</span><button type="button" class="btn sm" id="addShots">Attach…</button></div>
+      <div class="dropzone" id="dropzone">Drop images here or click Attach</div>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+    <div class="form-err" id="formErr"></div>
+    <div class="drawer-foot">
+      <button type="button" class="btn danger" id="deleteLog">Delete</button>
+      <span class="grow"></span>
+      <button type="button" class="btn" id="cancelLog">Cancel</button>
+      <button type="submit" class="btn primary">Save changes</button>
+    </div>
+  </form>
+</aside>
+<datalist id="instList"><option>MNQ</option><option>MES</option><option>MGC</option><option>NQ</option><option>ES</option><option>GC</option><option>MYM</option><option>M2K</option><option>MCL</option></datalist>
+
+<div class="lightbox" id="lightbox" hidden><img id="lbImg" alt=""><div class="lb-cap" id="lbCap"></div></div>
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
