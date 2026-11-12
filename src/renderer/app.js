@@ -1,4 +1,8 @@
 'use strict';
+window.addEventListener('error', (ev) => {
+  console.log('[renderer]', ev.message, ev.filename, ev.lineno);
+  try { if (typeof enterApp === 'function') enterApp(); } catch (e) {}
+});
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -495,6 +499,9 @@ function entrance() {
 }
 
 function paintNow() {
+  try { paintClock(); } catch (err) { console.log('[clock]', err && err.message ? err.message : err); }
+}
+function paintClock() {
   const now = new Date();
   $('#clock').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const status = tradingSessions(now);
@@ -609,15 +616,27 @@ function playFile(file, vol, loop) {
   });
   return handle;
 }
+function activeSongFile() {
+  const file = state.settings?.themeSong?.file;
+  if (!file || typeof themeSongFileUrl !== 'function') return '';
+  try { themeSongFileUrl(file); return file; }
+  catch (err) { console.log('[theme-song] ignoring saved path', err && err.message ? err.message : err); return ''; }
+}
 function startSong(loop) {
-  stopSong(true);
-  songRetry = null;
-  const s = state.settings.themeSong || {};
-  if (s.enabled === false) return null;
-  const vol = songVolume();
-  const handle = s.file ? playFile(s.file, vol, loop) : playChime(vol, loop);
-  songHandle = handle;
-  return songHandle;
+  try {
+    stopSong(true);
+    songRetry = null;
+    const s = state.settings.themeSong || {};
+    if (s.enabled === false) return null;
+    const vol = songVolume();
+    const file = activeSongFile();
+    const handle = file ? playFile(file, vol, loop) : playChime(vol, loop);
+    songHandle = handle;
+    return songHandle;
+  } catch (err) {
+    console.log('[theme-song]', err && err.message ? err.message : err);
+    return null;
+  }
 }
 function playEntranceSong() { startSong(true); }
 function retrySong() {
@@ -655,7 +674,7 @@ function syncSongForm() {
   const on = $('#sSongOn'); if (on) on.checked = s.enabled !== false;
   const vol = $('#sSongVol'); if (vol) vol.value = Math.round(songVolume() * 100);
   const name = $('#songName');
-  if (name) name.textContent = s.file ? (s.name || 'Custom theme song') : 'No file chosen. A short original chime plays instead.';
+  if (name) name.textContent = activeSongFile() ? (s.name || 'Custom theme song') : (s.file ? "The saved song couldn't be used. Choose the file again." : 'No file chosen. A short original chime plays instead.');
 }
 $('#pickSong').onclick = async () => {
   try {

@@ -32,6 +32,6 @@ function themeSongFileUrl(fileName) {
   return 'journal-media://theme/' + encodeURIComponent(safe);
 }
 
-const api = { AUDIO_EXTS, audioExtension, safeStoredAudioName, themeSongFileUrl };
-if (typeof module !== 'undefined' && module.exports) module.exports = api;
-if (typeof window !== 'undefined') Object.assign(window, api);
+const mediaPathApi = { AUDIO_EXTS, audioExtension, safeStoredAudioName, themeSongFileUrl };
+if (typeof module !== 'undefined' && module.exports) module.exports = mediaPathApi;
+if (typeof window !== 'undefined') Object.assign(window, mediaPathApi);

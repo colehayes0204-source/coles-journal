@@ -127,6 +127,6 @@ function tradingSessions(now = new Date()) {
   };
 }
 
-const api = { tradingSessions, formatCountdown, SESSIONS, TZ };
-if (typeof module !== 'undefined' && module.exports) module.exports = api;
+const sessionsApi = { tradingSessions, formatCountdown, SESSIONS, TZ };
+if (typeof module !== 'undefined' && module.exports) module.exports = sessionsApi;
 if (typeof window !== 'undefined') window.tradingSessions = tradingSessions;

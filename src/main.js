@@ -131,7 +131,16 @@ function createWindow() {
       }, Number(process.env.GON_SHOT_DELAY || 1500));
     }, 300));
   }
-  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
+  const mainLog = (msg) => {
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'main.log'), new Date().toISOString() + ' ' + msg + '\n');
+  } catch (e) { console.log('[main] log failed', e && e.message ? e.message : e); }
+};
+win.webContents.on('render-process-gone', (_e, details) => { mainLog('render-process-gone ' + JSON.stringify(details)); console.log('[main] render-process-gone', details); });
+win.webContents.on('did-fail-load', (_e, code, desc, url) => { mainLog('did-fail-load ' + code + ' ' + desc + ' ' + url); console.log('[main] did-fail-load', code, desc, url); });
+win.webContents.setWindowOpenHandler(({ url }) => { if (/^https:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file:')) { e.preventDefault(); if (/^https:/.test(url)) shell.openExternal(url); } });
 }
 
