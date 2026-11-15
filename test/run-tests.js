@@ -7,6 +7,7 @@ const { tradingSessions } = require('../src/sessions');
 const { audioExtension, safeStoredAudioName, themeSongFileUrl, safeStoredBackgroundName, backgroundFileUrl, backgroundKind, recapFileUrl } = require('../src/media-path');
 const { shouldDismissEntrance, shouldReturnToStart } = require('../src/entrance-gate');
 const { normalizeLibrary, pickStartBackground, nextShuffleBackground, fallbackChain, normalizeSpeed } = require('../src/backgrounds');
+const { futuresPnl, rMultiple, report, propStatus, parseCsv, suggestMap, applyCsvMap, sessionFromTime } = require('../src/journal-math');
 
 let passed = 0;
 const test = async (name, fn) => { await fn(); passed++; console.log('  ✓ ' + name); };
@@ -349,6 +350,47 @@ function mockFetch(routes, calls) {
     assert.strictEqual(shouldReturnToStart({ key: 'w', ctrlKey: true, metaKey: false }, true), true);
     assert.strictEqual(shouldReturnToStart({ key: 'w', ctrlKey: false, metaKey: true }, false), true);
     assert.strictEqual(shouldReturnToStart({ key: 'a', ctrlKey: false, metaKey: false }, false), false);
+  });
+  console.log('Futures journal');
+  await test('MNQ long P&L uses the $2 point value and fees', () => {
+    assert.strictEqual(futuresPnl({ instrument: 'MNQ', direction: 'long', entry: 21000, exit: 21010, qty: 2, fees: 4 }), 36);
+    assert.strictEqual(futuresPnl({ instrument: 'MES', direction: 'short', entry: 5800, exit: 5790, qty: 1, fees: 0 }), 50);
+    assert.strictEqual(rMultiple({ direction: 'long', entry: 100, stop: 90, exit: 120 }), 2);
+    assert.strictEqual(sessionFromTime('09:40'), 'NY AM');
+    assert.strictEqual(sessionFromTime('14:05'), 'NY PM');
+  });
+  await test('prop meters and CSV mapping keep a round trip', () => {
+    const account = { id: 'a', balance: 50000, dailyLoss: 1000, trailingDrawdown: 2000, profitTarget: 3000, consistency: 0.5 };
+    const logs = [
+      { accountId: 'a', date: '2026-11-10', time: '09:30', pnl: 400 },
+      { accountId: 'a', date: '2026-11-10', time: '10:00', pnl: -100 },
+      { accountId: 'a', date: '2026-11-11', time: '09:30', pnl: 200 },
+    ];
+    const prop = propStatus(account, logs);
+    assert.strictEqual(prop.totalPnl, 500);
+    assert.ok(prop.ddLeft > 0);
+    const csv = 'Symbol,Side,Qty,Entry Price,Exit Price,PnL\nMNQ,Buy,1,100,110,20\n';
+    const parsed = parseCsv(csv);
+    const map = suggestMap(parsed.headers);
+    assert.strictEqual(map.instrument, 'Symbol');
+    assert.strictEqual(map.direction, 'Side');
+    const applied = applyCsvMap(parsed.rows, map, 'a');
+    assert.strictEqual(applied.trades.length, 1);
+    assert.strictEqual(applied.trades[0].direction, 'long');
+    assert.strictEqual(report(logs).net, 500);
+  });
+  await test('v1.3 migration copies logs and settings before it writes anything new', () => {
+    const dir = tmp();
+    fs.writeFileSync(path.join(dir, 'logs.json'), JSON.stringify([{ id: 'old', date: '2026-11-01', instrument: 'MNQ', direction: 'long', pnl: 10 }]));
+    fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ splash: true, startScreen: { mode: 'random', items: [] }, theme: 'light', rules: [], mentors: ['AccurateTradez'] }));
+    const store = new Store(dir);
+    const bak = fs.readFileSync(path.join(dir, 'backups', 'logs.json.v130.bak'), 'utf8');
+    assert.ok(bak.includes('old'));
+    assert.ok(fs.existsSync(path.join(dir, 'backups', 'settings.json.v130.bak')));
+    assert.strictEqual(store.listLogs()[0].instrument, 'MNQ');
+    assert.strictEqual(store.getSettings().theme, 'light');
+    assert.strictEqual(store.getSettings().rules.length, 0);
+    assert.strictEqual(store.listAccounts().length, 2);
   });
   console.log(`\n${passed} tests passed`);
 })().catch(e => { console.error('FAILED:', e); process.exit(1); });

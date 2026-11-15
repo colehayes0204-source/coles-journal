@@ -41,7 +41,11 @@ contextBridge.exposeInMainWorld('gon', {
     reorder: (date, ids) => inv('recap:reorder', date, ids),
     onProgress: cb => ipcRenderer.on('recap:progress', (_e, p) => cb(p)),
   },
-  app: { dataDir: () => inv('app:dataDir'), openDataDir: () => inv('app:openDataDir'), openExternal: u => inv('app:openExternal', u), version: () => inv('app:version') },
+  app: { dataDir: () => inv('app:dataDir'), openDataDir: () => inv('app:openDataDir'), openExternal: u => inv('app:openExternal', u), version: () => inv('app:version'), minimize: () => inv('app:minimize') },
+  accounts: { list: () => inv('accounts:list'), save: row => inv('accounts:save', row), remove: id => inv('accounts:delete', id) },
+  playbook: { list: () => inv('playbook:list'), save: row => inv('playbook:save', row), remove: id => inv('playbook:delete', id) },
+  days: { list: () => inv('days:list'), save: row => inv('days:save', row) },
+  csv: { open: () => inv('csv:open'), save: text => inv('csv:save', text) },
   updater: {
     state: () => inv('updater:state'),
     check: () => inv('updater:check'),

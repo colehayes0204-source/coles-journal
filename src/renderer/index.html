@@ -1,369 +1,41 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' gon: journal-media: data:; media-src 'self' gon: journal-media: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com">
 <title>Cole's Journal</title>
 <link rel="stylesheet" href="styles.css">
 </head>
-<body class="booting">
-<!-- ============ ENTRANCE ============ -->
-<div id="splash" class="splash" hidden>
-  <div class="splash-stage">
-    <video id="splashVideo" class="splash-video" src="assets/entrance-loop.mp4" muted autoplay loop playsinline preload="auto"></video>
-    <img id="splashImage" class="splash-image" alt="" hidden decoding="async" fetchpriority="high">
-  </div>
-  <div class="splash-shade" aria-hidden="true"></div>
-  <div class="splash-chrome">
-  <div class="splash-panel">
-    <div class="splash-time"><span id="splashHm">–:––</span><span id="splashSec" class="sec">––</span><span id="splashAm" class="ampm"></span></div>
-    <div class="splash-date" id="splashDate"></div>
-    <div class="splash-tz" id="splashTz"></div>
-    <div class="splash-ny" id="splashNy" hidden></div>
-    <div class="splash-closed" id="splashClosed" hidden>Market closed</div>
-    <div class="splash-sessions" id="splashSessions"></div>
-    <div class="splash-next" id="splashNext"></div>
-  </div>
-  <div class="splash-foot">
-    <h1 class="splash-name" id="splashName" aria-label="colehys"></h1>
-    <div class="splash-sub">Cole's Journal</div>
-    <div class="splash-hint">click anywhere to enter</div>
-  </div>
-  <button type="button" id="splashShuffle" class="splash-shuffle" title="Another background" aria-label="Another background">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11.2M16 4l3 3-3 3M20 17H8.8M8 14l-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  </button>
-  </div>
-</div>
-
-<!-- ============ APP SHELL ============ -->
-<div class="app" id="app">
-  <header class="topbar">
-    <div class="brand"><img class="brand-av" src="assets/gon-portrait.jpg" alt=""><span class="brand-name">Cole's Journal</span></div>
-    <nav class="tabs" id="tabs">
-      <button data-tab="home" class="tab active">Home</button>
-      <button data-tab="logs" class="tab">Logs</button>
-      <button data-tab="pnl" class="tab">P&amp;L</button>
-      <button data-tab="education" class="tab">Education</button>
-      <button data-tab="motivation" class="tab">Motivation</button>
-      <button data-tab="settings" class="tab">Settings</button>
-      <span class="tab-ink" id="tabInk"></span>
-    </nav>
-    <div class="top-right">
-      <div class="session-pill" id="topSession" title="Sessions follow New York time">…</div>
-      <button type="button" id="closeJournal" class="btn sm close-journal" title="Back to start screen">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.2c-2.1-1.3-4.5-1.9-7-1.9v12.4c2.5.1 4.9.8 7 2.2 2.1-1.4 4.5-2.1 7-2.2V4.3c-2.5 0-4.9.6-7 1.9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 6.2v12.7" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
-        Close journal
-      </button>
-      <button class="theme-btn" id="themeToggle" type="button" title="Switch light and dark">
-        <svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5 5l1.6 1.6M17.4 17.4 19 19M19 5l-1.6 1.6M6.6 17.4 5 19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        <svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.2A8.2 8.2 0 1 0 20.8 14 6.4 6.4 0 0 1 15.5 3.2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-      </button>
-      <button class="btn primary sm" id="quickLog" title="Log a trade (Ctrl+N)">+ Log trade</button>
-      <div class="clock mono" id="clock"></div>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><img src="assets/gon-portrait.jpg" alt=""><div><b>Cole's Journal</b><span class="muted" id="sideAcct">All accounts</span></div></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot">
+      <button type="button" class="acct-btn" id="acctBtn">All accounts</button>
+      <div class="muted tiny" id="sideVer"></div>
     </div>
-  </header>
-
-  <main id="views">
-    <!-- HOME -->
-    <section class="view active" id="view-home">
-      <div class="clouds" aria-hidden="true"><span></span><span></span><span></span></div>
-      <div class="banner" id="banner"></div>
-      <div class="hero rise" style="--i:0">
-        <div class="avatar-ring"><img id="avatar" alt="Gon" src="assets/gon-portrait.jpg"></div>
-        <div class="hero-text">
-          <div class="eyebrow mono" id="todayStr"></div>
-          <h1 class="greet" id="greeting"></h1>
-          <p class="muted" id="subGreeting"></p>
-        </div>
-      </div>
-      <blockquote class="home-quote card" id="homeQuote" hidden></blockquote>
-
-      <div class="home-grid">
-        <button class="card ask rise" style="--i:1" id="askLog">
-          <div class="ask-glow"></div>
-          <div class="eyebrow">New entry</div>
-          <div class="ask-q">Log a trade?</div>
-          <div class="muted ask-sub">Step-by-step: what you traded, your levels, the result, and whether you kept your rules.</div>
-          <div class="ask-cta"><span class="btn primary">Yes, let's log it →</span><span class="kbd mono">Enter</span></div>
-        </button>
-        <div class="card streak rise" style="--i:2" id="streakCard">
-          <div class="streak-top">
-            <div class="flame" id="flame" aria-hidden="true">
-              <svg viewBox="0 0 64 80"><defs>
-                <linearGradient id="fg1" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff7a2f"/><stop offset=".6" stop-color="#ffb23f"/><stop offset="1" stop-color="#ffd76a"/></linearGradient>
-                <linearGradient id="fg2" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#fff7dc"/></linearGradient></defs>
-                <path class="f-outer" d="M32 4c4 14 20 22 20 44a20 20 0 0 1-40 0c0-10 5-17 10-22 0 8 4 12 8 12-2-12 0-24 2-34z" fill="url(#fg1)"/>
-                <path class="f-inner" d="M32 40c3 7 10 10 10 20a10 10 0 0 1-20 0c0-6 4-9 6-12 0 4 2 6 4 6-1-5-1-9 0-14z" fill="url(#fg2)"/>
-              </svg>
-            </div>
-            <div>
-              <div class="eyebrow">Rule streak</div>
-              <div class="streak-num"><span class="mono" id="streakNow">0</span><span class="streak-unit">days</span></div>
-              <div class="small muted" id="streakBest">Best: 0 days</div>
-            </div>
-          </div>
-          <div class="streak-dots" id="streakDots"></div>
-          <div class="small muted" id="streakNote"></div>
-        </div>
-      </div>
-
-      <div class="stats" id="stats"></div>
-      <div class="grid2">
-        <div class="card rise" style="--i:8">
-          <div class="card-head"><h3>Equity curve <span class="muted small">cumulative R</span></h3></div>
-          <div id="curve" class="curve"></div>
-        </div>
-        <div class="card rise" style="--i:9">
-          <div class="card-head"><h3>Recent entries</h3><button class="link" data-goto="logs">View all →</button></div>
-          <div id="recent"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- LOGS -->
-    <section class="view" id="view-logs">
-      <div class="view-head">
-        <div><h2>Logs</h2><div class="muted small">Every trade you write down</div></div>
-        <div class="row gap">
-          <div class="seg" id="logMode"><button data-mode="list" class="on">List</button><button data-mode="calendar">Calendar</button></div>
-          <button class="btn primary" id="newLog">+ Log a trade</button>
-        </div>
-      </div>
-      <div class="filters" id="filters">
-        <input id="fSearch" placeholder="Search notes, setup, mindset…">
-        <select id="fInst"><option value="">All instruments</option></select>
-        <select id="fDir"><option value="">Long &amp; short</option><option value="long">Long</option><option value="short">Short</option></select>
-        <select id="fRes"><option value="">All results</option><option value="win">Wins</option><option value="loss">Losses</option><option value="be">Breakeven</option><option value="kept">Rules kept</option><option value="broken">Rules broken</option></select>
-        <input type="date" id="fFrom" title="From"><input type="date" id="fTo" title="To">
-        <button class="link" id="fClear">Clear</button>
-      </div>
-      <div class="muted small mono" id="filterSummary"></div>
-      <div id="logList"></div>
-      <div id="logCal" hidden></div>
-    </section>
-
-    <!-- P&L CALENDAR -->
-    <section class="view" id="view-pnl">
-      <div class="view-head">
-        <div><h2>P&amp;L calendar</h2><div class="muted small">Net dollars by day. Green is up, red is down, deeper means a bigger day.</div></div>
-        <div class="row gap">
-          <button class="btn sm" id="pnlPrev" type="button">←</button>
-          <div class="pnl-month" id="pnlMonthLabel"></div>
-          <button class="btn sm" id="pnlNext" type="button">→</button>
-        </div>
-      </div>
-      <div class="pnl-kpis" id="pnlKpis"></div>
-      <div class="pnl-layout">
-        <div class="pnl-cal" id="pnlCal"></div>
-        <aside class="card pnl-day" id="pnlDay"><div class="empty small">Click a day to see its trades.</div></aside>
-      </div>
-    </section>
-
-    <!-- EDUCATION -->
-    <section class="view" id="view-education">
-      <div class="view-head">
-        <div><h2>Education</h2><div class="muted small">Lessons grouped by the mentor who taught them</div></div>
-        <button class="btn primary" id="addEdu" type="button">+ Add video</button>
-      </div>
-      <div class="edu-layout">
-        <aside class="edu-side card" id="eduSide"></aside>
-        <div class="edu-main">
-          <input id="eduSearch" placeholder="Search titles, notes, tags…">
-          <div id="eduBoard"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- MOTIVATION -->
-    <section class="view" id="view-motivation">
-      <div class="view-head">
-        <div><h2>Motivation</h2><div class="muted small">Quotes and videos you want in front of you</div></div>
-        <div class="row gap wrap">
-          <div class="chips" id="motiveFilters">
-            <button type="button" class="chip on" data-f="all">All</button>
-            <button type="button" class="chip" data-f="quote">Quotes</button>
-            <button type="button" class="chip" data-f="video">Videos</button>
-          </div>
-          <button class="btn" id="addQuote" type="button">+ Quote</button>
-          <button class="btn primary" id="addMotiveVideo" type="button">+ Video</button>
-        </div>
-      </div>
-      <div class="motive-grid" id="motiveBoard"></div>
-    </section>
-
-    <!-- SETTINGS -->
-    <section class="view" id="view-settings">
-      <div class="view-head"><div><h2>Settings</h2><div class="muted small">Everything is stored locally on this computer</div></div></div>
-      <div class="settings">
-        <div class="card bg-library">
-          <h3>Start screen background</h3>
-          <p class="muted small">A library for the entrance. Random picks a different one each time the start screen opens, including when you close the journal. The dock video stays in the library. It can be turned off, not removed. If a file is missing, the next one is used, then the dock video.</p>
-          <div class="row gap wrap bg-tools">
-            <div class="seg" id="bgMode"><button type="button" data-mode="random">Random each launch</button><button type="button" data-mode="selected">Always use selected</button></div>
-            <div class="seg" id="bgFit"><button type="button" data-fit="fill">Fill</button><button type="button" data-fit="fit">Fit</button></div>
-            <button class="btn" id="addBackgrounds" type="button">Add files…</button>
-          </div>
-          <p class="muted small">Images: png, jpg, webp, gif. Video: mp4, webm, mov. Click a tile to select it. Changes here save immediately.</p>
-          <div class="bg-grid" id="bgGrid"></div>
-        </div>
-        <div class="card">
-          <h3>Profile</h3>
-          <label>Name<input id="sName"></label>
-          <label>Handle<input id="sHandle" placeholder="colehys"></label>
-          <label>Account<input id="sAcct" placeholder="e.g. Tradovate $1,000"></label>
-        </div>
-        <div class="card">
-          <h3>My rules</h3>
-          <p class="muted small">The wizard checks these on every trade. A day counts toward your rule streak only if every trade kept every rule.</p>
-          <div id="rulesEditor" class="rules-editor"></div>
-          <button class="btn sm" id="addRule">+ Add rule</button>
-        </div>
-        <div class="card">
-          <h3>Appearance</h3>
-          <p class="muted small">Light, dark grey, or follow this computer.</p>
-          <div class="seg" id="themeSeg"><button type="button" data-theme="light">Light</button><button type="button" data-theme="dark">Dark</button><button type="button" data-theme="system">System</button></div>
-        </div>
-        <div class="card">
-          <h3>Theme song</h3>
-          <p class="muted small">Plays while the entrance screen is up and fades out when you click through. Choose a file from this computer. Nothing is built into the app.</p>
-          <label class="check"><input type="checkbox" id="sSongOn"> Play on the entrance screen</label>
-          <label>Volume<input id="sSongVol" type="range" min="0" max="100"></label>
-          <div class="row gap wrap">
-            <button class="btn" id="pickSong" type="button">Choose audio…</button>
-            <button class="btn" id="previewSong" type="button">Play</button>
-            <button class="btn ghost" id="clearSong" type="button">Remove</button>
-          </div>
-          <div class="mono small muted ellipsis" id="songName">No file chosen. A short original chime plays instead.</div>
-          <div class="form-err" id="songErr"></div>
-        </div>
-        <div class="card">
-          <h3>App</h3>
-          <label class="check"><input type="checkbox" id="sSplash"> Show the entrance screen on launch</label>
-          <p class="muted small">The start screen plays when you open the app and waits until you click or press a key. Uncheck this to go straight to Home. Close journal still returns to the start screen.</p>
-          <div class="row gap"><button class="btn" id="openData" type="button">Open data folder</button><span class="mono small muted ellipsis" id="dataDir"></span></div>
-        </div>
-        <div class="card">
-          <h3>Updates</h3>
-          <p class="muted small">Current version <span class="mono" id="appVersion">…</span>. A new version downloads in the background and installs only when you restart.</p>
-          <div class="row gap"><button class="btn" type="button" id="checkUpdates">Check for updates</button><span class="small muted" id="updateMsg"></span></div>
-        </div>
-        <div class="row gap save-row"><button class="btn primary" id="saveSettings">Save settings</button><span class="small muted" id="saveMsg"></span></div>
-      </div>
-    </section>
-  </main>
-</div>
-
-<!-- ============ GUIDED WIZARD ============ -->
-<div class="wiz-overlay" id="wizOverlay" hidden>
-  <div class="wiz card" id="wiz" role="dialog" aria-modal="true">
-    <div class="wiz-top">
-      <div class="wiz-label"><b>Log a trade</b><span class="dot-sep">·</span><span id="wizStepLbl">Step 1 of 8</span></div>
-      <button class="icon" id="wizClose" title="Close (Esc)">✕</button>
-    </div>
-    <div class="wiz-progress"><span id="wizBar"></span></div>
-    <div class="wiz-stage" id="wizStage"></div>
-    <div class="wiz-foot">
-      <button class="btn ghost" id="wizBack">← Back</button>
+  </aside>
+  <div class="workspace">
+    <header class="top">
+      <button type="button" class="search" id="searchBtn"><span>Search</span><kbd>/</kbd></button>
       <span class="grow"></span>
-      <span class="kbd mono hint">Enter ↵</span>
-      <button class="btn primary" id="wizNext">Next →</button>
-    </div>
+      <span class="pill" id="topSession">Session</span>
+      <button type="button" class="icon-btn" id="themeBtn" title="Light or dark">◐</button>
+      <button type="button" class="btn primary" id="newTradeBtn">New trade <kbd>N</kbd></button>
+    </header>
+    <main id="view"></main>
   </div>
 </div>
-
-<!-- ============ EDIT DRAWER (existing logs) ============ -->
-<div class="overlay" id="overlay" hidden></div>
-<aside class="drawer" id="drawer" aria-hidden="true">
-  <form id="logForm" autocomplete="off">
-    <div class="drawer-head"><h3 id="formTitle">Edit log</h3><button type="button" class="icon" id="closeDrawer">✕</button></div>
-    <div class="fgrid">
-      <label>Date<input type="date" name="date" required></label>
-      <label>Time<input type="time" name="time"></label>
-      <label>Instrument<input name="instrument" list="instList" required placeholder="MNQ"></label>
-      <label>Direction<div class="seg full" id="dirSeg"><button type="button" data-v="long" class="on">Long</button><button type="button" data-v="short">Short</button></div></label>
-      <label>Entry<input name="entry" inputmode="decimal" class="mono"></label>
-      <label>Stop<input name="stop" inputmode="decimal" class="mono"></label>
-      <label>Target<input name="target" inputmode="decimal" class="mono"></label>
-      <label>Setup<input name="setup" placeholder="10am H6 sweep + CISD"></label>
-      <label>Result (R)<input name="resultR" inputmode="decimal" class="mono" placeholder="e.g. 2 or -1"></label>
-      <label>P&amp;L ($)<input name="pnl" inputmode="decimal" class="mono" placeholder="e.g. 150 or -75"></label>
-    </div>
-    <div class="muted small mono" id="plannedRR"></div>
-    <label>Setup notes<textarea name="notes" rows="4"></textarea></label>
-    <label>Emotions / mindset<textarea name="mindset" rows="3"></textarea></label>
-    <div class="label">Rules</div>
-    <div class="rule-list compact" id="drawerRules"></div>
-    <div class="shots">
-      <div class="row between"><span class="label">Screenshots</span><button type="button" class="btn sm" id="addShots">Attach…</button></div>
-      <div class="dropzone" id="dropzone">Drop images here or click Attach</div>
-      <div class="thumbs" id="thumbs"></div>
-    </div>
-    <div class="form-err" id="formErr"></div>
-    <div class="drawer-foot">
-      <button type="button" class="btn danger" id="deleteLog">Delete</button>
-      <span class="grow"></span>
-      <button type="button" class="btn" id="cancelLog">Cancel</button>
-      <button type="submit" class="btn primary">Save changes</button>
-    </div>
-  </form>
-</aside>
-<datalist id="instList"><option>MNQ</option><option>MES</option><option>MGC</option><option>NQ</option><option>ES</option><option>GC</option><option>MYM</option><option>M2K</option><option>MCL</option></datalist>
-
-<div class="edu-overlay" id="eduOverlay" hidden>
-  <div class="edu-dialog card" role="dialog" aria-modal="true">
-    <div class="wiz-top"><div class="wiz-label"><b id="eduDialogTitle">Add a video</b></div><button class="icon" id="eduClose" type="button" title="Close">✕</button></div>
-    <div class="edu-body">
-      <div class="edu-player" id="eduPlayer"></div>
-      <div class="edu-fields">
-        <label>Title<input id="eTitle" placeholder="10am sweep, start to finish"></label>
-        <div class="fgrid">
-          <label>Mentor<select id="eMentor"></select></label>
-          <label>Date<input id="eDate" type="date"></label>
-        </div>
-        <label>Tags<input id="eTags" placeholder="sweep, CISD, patience"></label>
-        <label>Link<input id="eUrl" placeholder="https://www.youtube.com/watch?v=…"></label>
-        <div class="row gap wrap"><button class="btn sm" id="ePick" type="button">Choose a video file…</button><span class="mono small muted ellipsis" id="eFileName">Or paste a link above</span></div>
-        <label>Notes<textarea id="eNotes" rows="3" placeholder="What to remember"></textarea></label>
-        <div class="label">Timestamps</div>
-        <div id="eStamps" class="stamps"></div>
-        <button class="btn sm" id="eAddStamp" type="button">+ Add timestamp</button>
-        <label class="check" style="margin-top:12px"><input type="checkbox" id="eWatched"> Mark watched</label>
-        <div class="form-err" id="eduErr"></div>
-        <div class="row gap" style="margin-top:8px">
-          <button class="btn danger" id="eduDelete" type="button" hidden>Delete</button>
-          <span class="grow"></span>
-          <button class="btn" id="eduCancel" type="button">Cancel</button>
-          <button class="btn primary" id="eduSave" type="button">Save</button>
-        </div>
-      </div>
-    </div>
-  </div>
+<div class="modal" id="modal" hidden></div>
+<div class="palette" id="palette" hidden>
+  <input id="paletteQ" placeholder="Jump to a page or action" autocomplete="off">
+  <div id="paletteList"></div>
 </div>
-<datalist id="mentorList"></datalist>
-<div class="edu-overlay" id="motiveOverlay" hidden>
-  <div class="edu-dialog card" role="dialog" aria-modal="true">
-    <div class="wiz-top"><div class="wiz-label"><b id="motiveTitle">Add a quote</b></div><button class="icon" id="motiveClose" type="button" title="Close">✕</button></div>
-    <div class="edu-fields" style="padding:8px 22px 22px">
-      <label id="motiveTextLabel">Quote<textarea id="mText" rows="4" placeholder="The line you want to remember"></textarea></label>
-      <label id="motiveAuthorLabel">Author<input id="mAuthor" placeholder="Optional"></label>
-      <label id="motiveLinkLabel" hidden>Link<input id="mUrl" placeholder="https://www.youtube.com/watch?v=…"></label>
-      <div class="row gap wrap" id="motiveFileRow" hidden><button class="btn sm" id="mPick" type="button">Choose a video file…</button><span class="mono small muted ellipsis" id="mFileName">Or paste a link</span></div>
-      <label class="check"><input type="checkbox" id="mPin"> Pin this</label>
-      <div class="form-err" id="motiveErr"></div>
-      <div class="row gap" style="margin-top:8px"><span class="grow"></span><button class="btn" id="motiveCancel" type="button">Cancel</button><button class="btn primary" id="motiveSave" type="button">Save</button></div>
-    </div>
-  </div>
-</div>
-<div class="lightbox" id="lightbox" hidden><img id="lbImg" alt=""><div class="lb-cap" id="lbCap"></div></div>
 <div class="toast" id="toast"></div>
-<div class="update-pill" id="updatePill" hidden role="status">
-  <span class="update-dot" aria-hidden="true"></span>
-  <span>Update ready</span>
-  <button class="btn primary sm" type="button" id="updateRestart">Restart</button>
-</div>
-<script src="../entrance-gate.js"></script>
+<div class="update-pill" id="updatePill" hidden><span>Update ready</span><button type="button" class="btn primary sm" id="updateRestart">Restart</button></div>
+<script src="../journal-math.js"></script>
 <script src="../media-path.js"></script>
-<script src="../backgrounds.js"></script>
 <script src="../sessions.js"></script>
 <script src="app.js"></script>
 </body>

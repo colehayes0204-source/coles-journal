@@ -157,14 +157,17 @@ function createWindow() {
     autoHideMenuBar: true, show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: process.env.GON_TAB ? (process.env.GON_SPLASH ? { tab: process.env.GON_TAB } : { tab: process.env.GON_TAB, nosplash: '1' }) : {} });
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: process.env.GON_TAB ? { tab: process.env.GON_TAB } : {} });
   win.once('ready-to-show', () => { if (!process.env.GON_SHOT) win.maximize(); win.show(); });
   // Test hook: GON_SHOT=<file.png> captures the window after load, then quits.
   if (process.env.GON_SHOT) {
     win.webContents.once('did-finish-load', () => setTimeout(async () => {
       if (process.env.GON_EVAL) { // test hook: run JS in the renderer, save the JSON result
-        const r = await win.webContents.executeJavaScript(require('fs').readFileSync(process.env.GON_EVAL, 'utf8')).catch(e => ({ error: String(e) }));
-        require('fs').writeFileSync(process.env.GON_SHOT + '.json', JSON.stringify(r, null, 2));
+        try {
+          const code = fs.readFileSync(process.env.GON_EVAL, 'utf8');
+          const r = await win.webContents.executeJavaScript(code).catch(e => ({ error: String(e) }));
+          fs.writeFileSync(process.env.GON_SHOT + '.json', JSON.stringify(r, null, 2));
+        } catch (e) { mainLog('GON_EVAL ' + (e && e.message ? e.message : e)); }
       }
       if (process.env.GON_OPEN_FORM) await win.webContents.executeJavaScript("document.querySelector('#logList tbody tr')?.click()");
       setTimeout(async () => {
@@ -228,6 +231,26 @@ app.whenReady().then(() => {
   ipcMain.handle('app:openDataDir', () => shell.openPath(store.dir));
   ipcMain.handle('app:openExternal', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
   ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('app:minimize', () => { if (win && !win.isDestroyed()) win.minimize(); return true; });
+  ipcMain.handle('accounts:list', () => store.listAccounts());
+  ipcMain.handle('accounts:save', (_e, row) => store.saveAccount(row || {}));
+  ipcMain.handle('accounts:delete', (_e, id) => store.deleteAccount(id));
+  ipcMain.handle('playbook:list', () => store.listPlaybook());
+  ipcMain.handle('playbook:save', (_e, row) => store.savePlaybook(row || {}));
+  ipcMain.handle('playbook:delete', (_e, id) => store.deletePlaybook(id));
+  ipcMain.handle('days:list', () => store.listDays());
+  ipcMain.handle('days:save', (_e, row) => store.saveDay(row || {}));
+  ipcMain.handle('csv:open', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Import trades', properties: ['openFile'], filters: [{ name: 'CSV', extensions: ['csv', 'txt'] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    return fs.readFileSync(r.filePaths[0], 'utf8');
+  });
+  ipcMain.handle('csv:save', async (_e, text) => {
+    const r = await dialog.showSaveDialog(win, { title: 'Export trades', defaultPath: 'coles-journal.csv', filters: [{ name: 'CSV', extensions: ['csv'] }] });
+    if (r.canceled || !r.filePath) return false;
+    fs.writeFileSync(r.filePath, String(text || ''));
+    return true;
+  });
   ipcMain.handle('updater:state', () => updateState.status === 'idle' && !app.isPackaged ? { status: 'dev', version: app.getVersion() } : updateState);
   ipcMain.handle('updater:check', () => checkForUpdates());
   ipcMain.handle('updater:install', () => {

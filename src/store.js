@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { safeStoredAudioName, themeSongFileUrl, safeStoredBackgroundName, backgroundFileUrl, backgroundKind, safeStoredVideoName, storedVideoUrl, recapFileUrl } = require('./media-path');
 const { normalizeLibrary } = require('./backgrounds');
+const { futuresPnl, rMultiple, sessionFromTime } = require('./journal-math');
 
 const DEFAULT_SETTINGS = {
   profile: { name: 'Cole', handle: 'colehys', account: 'Tradovate $1,000', startBalance: 1000 },
@@ -13,10 +14,11 @@ const DEFAULT_SETTINGS = {
   pollMinutes: 15,
   bearerToken: '',
   splash: true,
-  theme: 'light', // light | dark | system
+  theme: 'dark', // light | dark | system
   eduMentors: [],
   themeSong: { enabled: true, volume: 0.7, file: '', name: '' },
   startScreen: { mode: 'random', fit: 'fill', selectedId: 'default', lastId: '', items: [] },
+  goals: { maxTrades: 3 },
   rules: [
     'No revenge trading.',
     'No trading without a setup.',
@@ -25,7 +27,7 @@ const DEFAULT_SETTINGS = {
   ],
 };
 
-const NUM_FIELDS = ['entry', 'stop', 'target', 'resultR', 'pnl'];
+const NUM_FIELDS = ['entry', 'exit', 'stop', 'target', 'resultR', 'pnl', 'fees', 'mae', 'mfe', 'qty', 'confidence'];
 
 function readJSON(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
@@ -55,6 +57,10 @@ class Store {
     this.recapFile = path.join(dir, 'recaps.json');
     this.motiveDir = path.join(dir, 'motivation');
     this.recapDir = path.join(dir, 'recaps');
+    this.accountsFile = path.join(dir, 'accounts.json');
+    this.playbookFile = path.join(dir, 'playbook.json');
+    this.daysFile = path.join(dir, 'days.json');
+    this._backupOnce();
     this.videosDir = path.join(dir, 'videos');
     this.thumbsDir = path.join(dir, 'thumbs');
     this.songDir = path.join(dir, 'theme');
@@ -75,6 +81,7 @@ class Store {
     return {
       ...DEFAULT_SETTINGS, ...s,
       profile: { ...DEFAULT_SETTINGS.profile, ...(s.profile || {}) },
+      goals: { ...DEFAULT_SETTINGS.goals, ...(s.goals || {}) },
       themeSong: { ...DEFAULT_SETTINGS.themeSong, ...(s.themeSong || {}) },
       startScreen: normalizeLibrary(s.startScreen),
       eduMentors: this._eduMentors(s),
@@ -95,7 +102,8 @@ class Store {
       song.name = String(song.name || '');
       next.themeSong = song;
     }
-    if (patch.theme) next.theme = ['light', 'dark', 'system'].includes(patch.theme) ? patch.theme : cur.theme || 'light';
+    if (patch.theme) next.theme = ['light', 'dark', 'system'].includes(patch.theme) ? patch.theme : cur.theme || 'dark';
+    if (patch.goals) next.goals = { ...cur.goals, ...patch.goals, maxTrades: Math.max(1, Math.min(50, Number(patch.goals.maxTrades) || cur.goals.maxTrades || 3)) };
     if (patch.startScreen) {
       const incoming = patch.startScreen;
       const merged = { ...cur.startScreen, ...incoming };
@@ -224,9 +232,22 @@ class Store {
       followedPlan: input.followedPlan === undefined || input.followedPlan === null ? null : !!input.followedPlan,
       rulesBroken: Array.isArray(input.rulesBroken) ? input.rulesBroken.map(String) : [],
       emotions: Array.isArray(input.emotions) ? input.emotions.map(String) : [],
+      mistakes: Array.isArray(input.mistakes) ? input.mistakes.map(String).slice(0, 12) : [],
       screenshots: Array.isArray(input.screenshots) ? input.screenshots.slice() : [],
+      accountId: String(input.accountId || ''),
+      playbookId: String(input.playbookId || ''),
+      session: String(input.session || ''),
     };
     for (const f of NUM_FIELDS) o[f] = toNum(input[f]);
+    if (!o.session && o.time) o.session = sessionFromTime(o.time);
+    if (o.pnl == null) {
+      const priced = futuresPnl(o);
+      if (priced != null) o.pnl = priced;
+    }
+    if (o.resultR == null) {
+      const r = rMultiple(o);
+      if (r != null) o.resultR = r;
+    }
     return o;
   }
 
@@ -548,9 +569,130 @@ class Store {
     return name;
   }
   _rmFile(dir, name) { try { fs.unlinkSync(path.join(dir, path.basename(name))); } catch {} }
+
+  _backupOnce() {
+    try {
+      const stamp = path.join(this.dir, 'backups');
+      const marker = path.join(stamp, 'v130.marker');
+      if (fs.existsSync(marker)) return;
+      fs.mkdirSync(stamp, { recursive: true });
+      for (const name of ['logs.json', 'settings.json']) {
+        const src = path.join(this.dir, name);
+        if (fs.existsSync(src)) fs.copyFileSync(src, path.join(stamp, name + '.v130.bak'));
+      }
+      fs.writeFileSync(marker, new Date().toISOString() + '\n');
+    } catch (e) { console.log('[backup]', e && e.message ? e.message : e); }
+  }
+
+  listAccounts() {
+    const saved = readJSON(this.accountsFile, null);
+    if (Array.isArray(saved)) return saved;
+    const seeded = defaultAccounts();
+    writeJSON(this.accountsFile, seeded);
+    return seeded;
+  }
+  saveAccount(input) {
+    const list = this.listAccounts();
+    const row = cleanAccount(input);
+    const i = list.findIndex(a => a.id === row.id);
+    if (i >= 0) list[i] = { ...list[i], ...row };
+    else list.push(row);
+    writeJSON(this.accountsFile, list);
+    return row;
+  }
+  deleteAccount(id) {
+    const list = this.listAccounts().filter(a => a.id !== id);
+    writeJSON(this.accountsFile, list);
+    return list;
+  }
+
+  listPlaybook() {
+    const saved = readJSON(this.playbookFile, null);
+    if (Array.isArray(saved)) return saved;
+    const seeded = defaultPlaybook();
+    writeJSON(this.playbookFile, seeded);
+    return seeded;
+  }
+  savePlaybook(input) {
+    const list = this.listPlaybook();
+    const row = cleanPlay(input);
+    const i = list.findIndex(a => a.id === row.id);
+    if (i >= 0) list[i] = { ...list[i], ...row };
+    else list.push(row);
+    writeJSON(this.playbookFile, list);
+    return row;
+  }
+  deletePlaybook(id) {
+    const list = this.listPlaybook().filter(a => a.id !== id);
+    writeJSON(this.playbookFile, list);
+    return list;
+  }
+
+  listDays() { return readJSON(this.daysFile, []); }
+  saveDay(input) {
+    const date = String(input.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('date must be YYYY-MM-DD');
+    const days = this.listDays();
+    const row = {
+      date,
+      bias: String(input.bias || '').slice(0, 4000),
+      levels: String(input.levels || '').slice(0, 4000),
+      news: String(input.news || '').slice(0, 4000),
+      review: String(input.review || '').slice(0, 8000),
+      mood: clampScore(input.mood),
+      sleep: clampScore(input.sleep),
+      discipline: clampScore(input.discipline),
+      grade: String(input.grade || '').slice(0, 2).toUpperCase(),
+      updatedAt: Date.now(),
+    };
+    const i = days.findIndex(d => d.date === date);
+    if (i >= 0) days[i] = row; else days.push(row);
+    writeJSON(this.daysFile, days);
+    return row;
+  }
 }
 
 const MENTOR_COLORS = ['#6ea8fe', '#e09f6d', '#7dcea0', '#d4a5d8', '#8fd0c6', '#e8c87a', '#f0a0a0', '#b0b7c3'];
+function clampScore(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(1, Math.min(5, Math.round(n)));
+}
+function defaultAccounts() {
+  return [
+    { id: 'topstep-50k', name: 'Topstep 50k XFA', broker: 'Topstep', kind: 'prop', balance: 50000, dailyLoss: 1000, trailingDrawdown: 2000, profitTarget: 0, consistency: 0.5 },
+    { id: 'tradovate-1k', name: 'Tradovate $1k', broker: 'Tradovate', kind: 'personal', balance: 1000, dailyLoss: 0, trailingDrawdown: 0, profitTarget: 0, consistency: 0 },
+  ];
+}
+function cleanAccount(input) {
+  const n = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
+  return {
+    id: String(input.id || crypto.randomUUID()),
+    name: String(input.name || 'Account').slice(0, 80),
+    broker: String(input.broker || '').slice(0, 40),
+    kind: input.kind === 'prop' ? 'prop' : 'personal',
+    balance: n(input.balance),
+    dailyLoss: n(input.dailyLoss),
+    trailingDrawdown: n(input.trailingDrawdown),
+    profitTarget: n(input.profitTarget),
+    consistency: Math.max(0, Math.min(1, n(input.consistency))),
+  };
+}
+function defaultPlaybook() {
+  return [
+    { id: 'gxt', name: 'GxT', notes: 'TTrades fractal model. Higher-timeframe bias, then the fractal entry.', rules: ['Higher-timeframe bias is clear', 'Fractal confirms the entry', 'Stop sits beyond the swing', 'Target is the next pool of liquidity'] },
+    { id: 'accurate', name: 'Accurate Trades', notes: 'AccurateTradez model. Wait for the setup. Do not chase.', rules: ['Model is present', 'No chase after the move', 'Size matches the account rules'] },
+  ];
+}
+function cleanPlay(input) {
+  const rules = Array.isArray(input.rules) ? input.rules.map(r => String(r).trim()).filter(Boolean).slice(0, 20) : String(input.rules || '').split('\n').map(r => r.trim()).filter(Boolean).slice(0, 20);
+  return {
+    id: String(input.id || crypto.randomUUID()),
+    name: String(input.name || 'Setup').slice(0, 80),
+    notes: String(input.notes || '').slice(0, 4000),
+    rules,
+  };
+}
 function cleanMentorName(name) { return String(name || '').trim().replace(/^@/, '').slice(0, 40); }
 function cleanColor(color, index) {
   const c = String(color || '').trim();
